@@ -14,14 +14,19 @@ queue = Queue()
 l = networking.Listener(str(uuid.uuid4()), queue, "localhost")
 connections = {}
 
+if "bla" in list(connections.keys()):
+	pass
+
 while(True):
 	if not queue.empty():
 		command = queue.get()
+		logger.info("got routing command: %s" % command["command"])
 		if command["command"] == "add_connection":
 			con = command["connection"]
 			connections[con.get_peer_id()] = con
-		elif command["command"] == "dummy":
-			pass
+		elif command["command"] == "remove_connection":
+			con = command["connection"]
+			del connections[con.get_peer_id()]
 		else:
 			logger.error("unknown routing command '%s'!" % command["command"])
 		queue.task_done()

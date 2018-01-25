@@ -1,5 +1,6 @@
+from queue import Queue
 
-from base import Routing
+from .base import Router
 
-class Flooding(Routing):
+class Flooding(Router):
 	

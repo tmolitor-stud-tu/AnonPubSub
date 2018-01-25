@@ -1,3 +1,5 @@
+import math
+import time
 import struct
 import socket
 import queue
@@ -24,6 +26,7 @@ class LoggingIPFilter(logging.Filter):
 		record.port = int(self.addr[1])
 		return True
 
+
 class Connection:
 	len_size = 0
 	
@@ -35,7 +38,7 @@ class Connection:
 	node_id = ""
 	peer_id = ""
 	
-	def __init__(self, node_id, queue, sock, addr, do_init):
+	def __init__(self, node_id, queue, sock, addr, start_init):
 		self.is_dead = False
 		self.node_id = node_id
 		self.len_size = len(struct.pack("!Q", 0))	# calculate length of packed unsigned long long int
@@ -44,22 +47,32 @@ class Connection:
 		self.addr = addr
 		logger.addFilter(LoggingIPFilter(self.addr))
 		
-		if do_init:		# start with sending init message
+		timer=time.perf_counter()
+		if start_init:		# start with sending init message
 			logger.debug("sending init message to %s" % str(self.addr))
 			self.send_msg(Message("init", {"node": self.node_id}))
-			self._receive_init_message()
+			if self._receive_init_message():
+				raise ValueError("Initialization failed!")	# error happened, stop here
 		else:			# wait for init message
 			logger.debug("waiting for init message from %s" % str(self.addr))
-			self._receive_init_message()
+			if self._receive_init_message():
+				raise ValueError("Initialization failed!")	# error happened, stop here
 			logger.debug("sending init message to %s" % str(self.addr))
 			self.send_msg(Message("init", {"node": self.node_id}))
 		
-		logger.debug("starting receiver thread for %s" % str(self.addr))
-		self.thread = Thread(name=self.peer_id+"::_recv_thread", target=self._recv_thread)
-		self.thread.start()
+		# set SO_SNDTIMEO to max(1, 2 * RTT)
+		timer = math.ceil(time.perf_counter()-timer)
+		sndtimeo = max(1, 2 * timer)
+		logger.debug("RTT: %d, sndtimeo: %d" % (timer, sndtimeo))
+		timeval = struct.pack("ll", sndtimeo, 0)
+		sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO, timeval)
 	
 	def get_peer_id(self):
 		return self.peer_id
+	
+	def start_receiver(self):
+		self.thread = Thread(name="remote::"+self.peer_id+"::_recv_thread", target=self._recv_thread)
+		self.thread.start()
 	
 	def send_msg(self, msg):
 		if self.is_dead:
@@ -68,10 +81,19 @@ class Connection:
 		logger.debug("sending json message(%d): %s" % (len(serialized), serialized))
 		data = struct.pack("!Q", len(serialized))	# network byte order (big endian) length of the json string
 		data = data + serialized.encode("UTF-8")	# json string
-		self.sock.sendall(data)
+		try:
+			self.sock.sendall(data)
+		except socket.error as err:
+			logger.info("Got error '%s' in socket.sendall, stopping receiver thread and marking connection object as dead" % str(err))
+			self.is_dead = True
+			self.sock.close()
+			# closing the socket and setting is_dead to True should eventually stop the thread, just wait for it to be finished doing its cleanup
+			#self.thread.stop()
+			self.thread.join()
 	
 	def _recv_thread(self):
-		while True:
+		logger.debug("receiver thread for %s started" % str(self.addr))
+		while not self.is_dead:
 			try:
 				msg = self._recv_msg()
 				self.router_queue.put({"command": "message_received", "connection": self, "message": msg})
@@ -80,6 +102,13 @@ class Connection:
 				break	# stop receiver thread and mark connection as dead
 		self.is_dead = True		# no locking needed because this is only written once and no timing issues are involved in testing this value
 		self.sock.close()
+		self.router_queue.put({
+			"command": "remove_connection",
+			"connection": self
+		})
+		logger.info("Trying to reconnect to %s" % str((self.addr[0], 9999)))
+		connect_to(self.node_id, self.router_queue, self.addr[0])
+		logger.debug("receiver thread for %s stopped" % str(self.addr))
 	
 	def _receive_init_message(self):
 		try:
@@ -91,11 +120,15 @@ class Connection:
 				return
 			self.peer_id = msg["node"]
 			logger.info("Got peer id %s from %s" % (self.peer_id, str(self.addr)))
+			if self.peer_id == self.node_id:
+				logger.warning("Peer ID %s equals own ID, dropping connection" % self.peer_id)
+				raise ValueError("Peer ID equals own ID!")
 		except (socket.error, ValueError) as err:
 			logger.warning("Got error '%s' while initiating connection sequence, marking connection object as dead" % str(err))
 			self.is_dead = True
 			self.sock.close()
-			raise
+			return True
+		return False
 	
 	def _recv_msg(self):
 		data = self._recv_full(self.len_size)
@@ -111,6 +144,12 @@ class Connection:
 		data = bytearray()
 		while size > 0:
 			new_data = self.sock.recv(size)
+			if len(new_data) == 0:
+				raise BrokenPipeError("Connection broken!")
 			size -= len(new_data)
 			data = data + new_data
 		return data
+
+
+# circular imports!
+from .client_connection import connect_to

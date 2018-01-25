@@ -21,19 +21,28 @@ class Listener:
 		listener_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		listener_socket.bind((host, 9999))
 		listener_socket.listen(4)
-		logger.debug("starting listener thread")
-		self.listener_thread = Thread(name=self.node_id+"::listener", target=self.listen, args=(listener_socket,))
+		self.listener_thread = Thread(name="local::"+self.node_id+"::_listener", target=self._listener, args=(listener_socket,))
 		self.listener_thread.start()
 	
-	def listen(self, listener_socket):
+	def _listener(self, listener_socket):
+		logger.debug("listener thread started")
 		while(True):
 			client, addr = listener_socket.accept()
 			logger.info("New client connected: %s" % str(addr))
-			try:
-				con = Connection(self.node_id, self.router_queue, client, addr, True)
-				self.router_queue.put({
-					"command": "add_connection",
-					"connection": con
-				})
-			except Exception as err:
-				logger.error("Got error '%s', while setting up new connection, ignoring this client" % str(err))
+			# this thread is need to avoid blocking our accept loop if the connection is dropped right after accepting it
+			thread = Thread(name="local::"+self.node_id+"::_init_connection", target=self._init_connection, args=(client, addr))
+			thread.start()
+	
+	def _init_connection(self, client, addr):
+		logger.debug("connection initialization thread started")
+		try:
+			con = Connection(self.node_id, self.router_queue, client, addr, False)
+			self.router_queue.put({
+				"command": "add_connection",
+				"connection": con
+			})
+			con.start_receiver()
+			logger.debug("connection initialized, stopping connection initialization thread")
+		except Exception as err:
+			logger.error("Got error '%s', while setting up new connection to %s, ignoring this client and stopping this connection initialization thread" % (str(err), str(addr)))
+			return
