@@ -74,7 +74,10 @@ class Connection:
         self._close()
         self.thread.join()
         logger.debug("connection with %s terminated successfully" % str(self.addr))
-        
+    
+    def shutdown():
+        Connection.in_shutdown = True
+    
     def send_msg(self, msg):
         if self.is_dead:
             raise BrokenPipeError("Connection already closed!")
@@ -108,6 +111,8 @@ class Connection:
         while not self.is_dead:
             try:
                 msg = self._recv_msg()
+                if Connection.in_shutdown:
+                    break
                 self.router_queue.put({"command": "message_received", "connection": self, "message": msg})
             except socket.timeout as timeout:
                 continue;

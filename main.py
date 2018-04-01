@@ -24,18 +24,18 @@ import networking
 parser = argparse.ArgumentParser(description='CoolOverlay node.')
 parser.add_argument("-l", "--listen", metavar='HOSTNAME', help="Local hostname or IP to listen on", default="localhost")
 parser.add_argument("-b", "--bootstrap", metavar='URL', help="Load JSON encoded bootstrap file", default="http://localhost/cool_overlay.php")
+parser.add_argument("-u", "--uuid", metavar='UUID', help="Node UUID (default value is randomly generated)", default=str(uuid.uuid4()))
 args = parser.parse_args()
 
 #initialize our network listener
-node_uuid = str(uuid.uuid4());
 queue = Queue()
-l = networking.Listener(node_uuid, queue, args.listen)
+l = networking.Listener(args.uuid, queue, args.listen)
 connections = {}
 
 #use this to cleanup the system and exit
 def cleanup_and_exit(code=0):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    networking.Connection.in_shutdown = True
+    networking.Connection.shutdown()
     if l:
         l.stop();
     for peer_id, con in connections.items():
@@ -50,7 +50,7 @@ signal.signal(signal.SIGINT, sigint_handler)
 
 #load bootstrap file defining initial connections and connect to the listed nodes
 try:
-    url = args.bootstrap + ("?host=%s&uuid=%s" % (quote_plus(args.listen), quote_plus(node_uuid)))
+    url = args.bootstrap + ("?host=%s&uuid=%s" % (quote_plus(args.listen), quote_plus(args.uuid)))
     logger.info("Loading JSON encoded bootstrap file at '%s'." % url)
     req = urllib2.Request(args.bootstrap+"")
     req.add_header('User-Agent', 'CoolOverlay v0.1')
@@ -65,7 +65,7 @@ except Exception as err:
 for node in bootstrap:
     if node==args.listen:
         continue
-    networking.connect_to(node_uuid, queue, node)
+    networking.connect_to(args.uuid, queue, node)
 
 
 while True:
