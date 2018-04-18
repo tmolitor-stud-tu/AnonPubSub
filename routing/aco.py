@@ -41,7 +41,7 @@ class ACO(Router):
         logger.info("Publishing data on channel '%s'..." % str(channel))
         self._init_channel(channel)
         self.publishing.add(channel)
-        self._route_data(Message("data", {"channel": channel, "data": data, "ttl": max(6, MAX_ROUNDS)}))
+        self._route_data(Message("%s_data" % self.__class__.__name__, {"channel": channel, "data": data, "ttl": max(6, MAX_ROUNDS)}))
     
     def subscribe(self, channel, callback):
         if channel in self.subscriptions:
@@ -115,7 +115,7 @@ class ACO(Router):
                     con = self._pheromone_choice(ant["channel"], self.connections, ant["strictness"])
                     if con:
                         logger.info("%s: Round %d Sending out new searching ant %s to %s..." % (ant["channel"], round_count, str(ant), str(con)))
-                        con.send_msg(Message("ant", ant))
+                        con.send_msg(Message("%s_ant" % self.__class__.__name__, ant))
                     else:
                         logger.warning("Cannot route new searching ant, killing ant %s!" % str(ant))
                     
@@ -165,7 +165,7 @@ class ACO(Router):
                 "pheromones": ant["pheromones"]
             })
             logger.info("Sending out returning ant: %s to %s..." % (str(ant), str(self.connections[next_node])))
-            self.connections[next_node].send_msg(Message("ant", ant))
+            self.connections[next_node].send_msg(Message("%s_ant" % self.__class__.__name__, ant))
         else:
             ant["ttl"] -= 1
             if ant["ttl"] == 0:                 #ttl expired --> kill ant
@@ -179,7 +179,7 @@ class ACO(Router):
             con = self._pheromone_choice(ant["channel"], connections, ant["strictness"])
             if con:
                 logger.info("Sending out searching ant: %s to %s..." % (str(ant), str(con)))
-                con.send_msg(Message("ant", ant))
+                con.send_msg(Message("%s_ant" % self.__class__.__name__, ant))
             else:
                 logger.warning("Cannot route searching ant, killing ant %s!" % str(ant))
     
@@ -236,9 +236,9 @@ class ACO(Router):
             con = command["connection"]
             msg = command["message"]
             msg_type = msg.get_type()
-            if msg_type == "data":
+            if msg_type == "%s_data" % self.__class__.__name__:
                 self._route_data(msg, con)
-            elif msg_type == "ant":
+            elif msg_type == "%s_ant" % self.__class__.__name__:
                 self._route_ant(msg, con)
         elif command["command"] == "ACO_update_pheromones":
             if command["channel"] not in self.pheromones:

@@ -17,7 +17,7 @@ class Flooding(Router):
     
     def publish(self, channel, data):
         logger.info("Publishing data on channel '%s'..." % str(channel))
-        self._route_data(Message("data", {"channel": channel, "data": data, "ttl": INITIAL_TTL, "nodes": []}))
+        self._route_data(Message("%s_data" % self.__class__.__name__, {"channel": channel, "data": data, "ttl": INITIAL_TTL, "nodes": []}))
     
     def subscribe(self, channel, callback):
         if channel in self.subscriptions:
@@ -52,6 +52,7 @@ class Flooding(Router):
             peer = con.get_peer_id()
             del self.connections[peer]
         elif command["command"] == "message_received":
-            self._route_data(command["message"], command["connection"])
+            if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
+                self._route_data(command["message"], command["connection"])
         else:
             logger.error("Unknown routing command '%s', ignoring command!" % command["command"])
