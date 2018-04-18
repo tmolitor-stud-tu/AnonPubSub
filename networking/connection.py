@@ -94,6 +94,9 @@ class Connection:
             #self.thread.stop()
             self.thread.join()
     
+    def __str__(self):
+        return "Connection<%s@%s>" % (str(self.peer_id), str(self.addr))
+    
     def _close(self):
         self.is_dead = True	    # no locking needed because this is only set to True once and no timing issues are involved in testing this value
         try:

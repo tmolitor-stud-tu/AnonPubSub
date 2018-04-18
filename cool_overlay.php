@@ -5,11 +5,26 @@ $bootstrap=array(
 		'192.168.1.3',
 		'192.168.13.3',
 	),
+	'192.168.1.3'=>array(
+		'192.168.13.3',
+	),
+	'192.168.13.3'=>array(
+		'192.168.1.3',
+	),
 );
 
-$host=$_GET['host'];
-$uuid=$_GET['uuid'];
-if(!isset($host) || (!isset($bootstrap[$host]) && !isset($bootstrap[$uuid])))
-	$host='default';
-die(json_encode(isset($bootstrap[$host]) ? $bootstrap[$host] : $bootstrap[$uuid], JSON_PRETTY_PRINT));
+error_log(serialize($_GET));
+$data=$bootstrap[$_GET['uuid']];
+if(!isset($data))
+{
+	error_log("first isset");
+	$data=$bootstrap[$_GET['host']];
+}
+if(!isset($data))
+{
+	error_log("second isset");
+	$data=$bootstrap['default'];
+}
+error_log("returning ".serialize($data));
+die(json_encode($data, JSON_PRETTY_PRINT));
 ?>

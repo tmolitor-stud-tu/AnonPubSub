@@ -1,7 +1,6 @@
 import socket
 import queue
 from threading import Thread
-import sys
 import logging
 logger = logging.getLogger(__name__)
 
@@ -44,6 +43,7 @@ class Listener:
             # this thread is need to avoid blocking our accept loop if the connection is dropped right after accepting it
             thread = Thread(name="local::"+self.node_id+"::_init_connection", target=self._init_connection, args=(client, addr))
             thread.start()
+        logger.debug("listener thread stopped")
     
     def _init_connection(self, client, addr):
         logger.debug("connection initialization thread started")

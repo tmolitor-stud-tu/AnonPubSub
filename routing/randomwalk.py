@@ -1,4 +1,5 @@
 from queue import Queue
+import numpy
 import logging
 logger = logging.getLogger(__name__)
 
@@ -7,11 +8,12 @@ from .base import Router
 
 
 INITIAL_TTL = 60
+INITIAL_WALKERS = 5
 
-class Flooding(Router):
+class Randomwalk(Router):
     
     def __init__(self, node_id, queue):
-        super(Flooding, self).__init__(node_id, queue)
+        super(Randomwalk, self).__init__(node_id, queue)
         self.subscriptions = {}
         logger.info("Flooding Router initialized...")
     
@@ -35,12 +37,14 @@ class Flooding(Router):
         
         msg["ttl"] -= 1
         msg["nodes"].append(self.node_id)
-        connections = {key: value for key, value in self.connections.items() if key not in msg["nodes"]}    #this does avoid loops
+        connections = [key for key in self.connections if key not in msg["nodes"]]    #this does avoid loops
         if not len(connections):
             logger.warning("No additional peers found, cannot route data further!")
             return
+        #use at most INITIAL_WALKERS randomly selected peers to send our message to
+        connections = list(numpy.random.choice(connections, p=weights, size=min(len(connections), INITIAL_WALKERS)))
         for node_id in connections:
-            connections[node_id].send_msg(msg)
+            self.connections[node_id].send_msg(msg)
 
     def _process_command(self, command):
         if command["command"] == "add_connection":

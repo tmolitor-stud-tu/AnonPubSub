@@ -14,6 +14,8 @@ class Message:
             self.set_type(msg_type)
             if isinstance(data, dict):
                 self.msg["data"] = data
+            if isinstance(data, Message):
+                self.msg["data"] = data.msg["data"]
     
     # message type interface
     def set_type(self, msg_type):

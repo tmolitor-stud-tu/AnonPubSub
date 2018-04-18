@@ -1,12 +1,5 @@
 #!/usr/bin/python3
-#first of all: configure logging
-import json, logging, logging.config
-with open("logger.json", 'r') as logging_configuration_file:
-    logging.config.dictConfig(json.load(logging_configuration_file))
-logger = logging.getLogger()
-logger.info('Logger configured')
-
-#import everything that is needed here
+#import everything that is needed
 import uuid
 from queue import Queue
 import argparse
@@ -14,10 +7,11 @@ import urllib.request as urllib2
 from urllib.parse import quote_plus
 import sys
 import signal
-import codecs
+import time
 
 #our own modules come here
 import networking
+import routing
 
 
 #parse commandline
@@ -25,21 +19,37 @@ parser = argparse.ArgumentParser(description='CoolOverlay node.')
 parser.add_argument("-l", "--listen", metavar='HOSTNAME', help="Local hostname or IP to listen on", default="localhost")
 parser.add_argument("-b", "--bootstrap", metavar='URL', help="Load JSON encoded bootstrap file", default="http://localhost/cool_overlay.php")
 parser.add_argument("-u", "--uuid", metavar='UUID', help="Node UUID (default value is randomly generated)", default=str(uuid.uuid4()))
+parser.add_argument("-p", "--publish", metavar='TOPIC', help="Topic to publish")
+parser.add_argument("-s", "--subscribe", metavar='TOPIC', help="Topic to subscribe to")
+parser.add_argument("--log", metavar='LOGLEVEL', help="Loglevel to log", default="DEBUG")
+parser.add_argument("--randomwalk", help="Use Randomwalk router", action='store_true')
+parser.add_argument("--flooding", help="Use Flooding router", action='store_true')
+parser.add_argument("--aco", help="Use ACO router (Default)", action='store_true', default=True)
 args = parser.parse_args()
 
-#initialize our network listener
-queue = Queue()
-l = networking.Listener(args.uuid, queue, args.listen)
-connections = {}
+#first of all: configure logging
+import json, logging, logging.config
+with open("logger.json", 'r') as logging_configuration_file:
+    logger_config=json.load(logging_configuration_file)
+logger_config["root"]["level"]=args.log
+logging.config.dictConfig(logger_config)
+logger = logging.getLogger()
+logger.info('Logger configured')
+
+#initialize global vars
+queue = None
+router = None
+listener = None
 
 #use this to cleanup the system and exit
 def cleanup_and_exit(code=0):
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)    #ignore SIGINT while shutting down
+    logger.warning("Shutting down!")
     networking.Connection.shutdown()
-    if l:
-        l.stop();
-    for peer_id, con in connections.items():
-        con.terminate()
+    if listener:
+        listener.stop()
+    if router:
+        router.stop()
     sys.exit(code)
 
 #cleanup on sigint (CTRL-C)
@@ -48,15 +58,29 @@ def sigint_handler(sig, frame):
     cleanup_and_exit(0)
 signal.signal(signal.SIGINT, sigint_handler)
 
+#initialize our network listener and router
+queue = Queue()
+listener = networking.Listener(args.uuid, queue, args.listen)
+if args.flooding:
+    router = routing.Flooding(args.uuid, queue)
+elif args.randomwalk:
+    router = routing.Randomwalk(args.uuid, queue)
+elif args.aco:
+    router = routing.ACO(args.uuid, queue)
+else:
+    logger.error("Unknown router specified!")
+    cleanup_and_exit(2)
+
 #load bootstrap file defining initial connections and connect to the listed nodes
 try:
     url = args.bootstrap + ("?host=%s&uuid=%s" % (quote_plus(args.listen), quote_plus(args.uuid)))
     logger.info("Loading JSON encoded bootstrap file at '%s'." % url)
-    req = urllib2.Request(args.bootstrap+"")
+    req = urllib2.Request(url)
     req.add_header('User-Agent', 'CoolOverlay v0.1')
     req = urllib2.urlopen(req)
     encoding=req.headers['content-type'].split('charset=')[-1]
     data = req.read().decode(encoding)
+    logger.debug("json bootstrap data: %s" % str(data))
     bootstrap = json.loads(data)
 except Exception as err:
     logger.error("Error loading bootstrap file at '%s': %s" % (url, str(err)))
@@ -68,25 +92,17 @@ for node in bootstrap:
     networking.connect_to(args.uuid, queue, node)
 
 
+#test system
+time.sleep(6)
+def receiver(data):
+    print("DATA RECEIVED: '%s'..." % data)
+if args.subscribe:
+    time.sleep(2)
+    router.subscribe(args.subscribe, receiver)
+
+#wait for CTRL-C
 while True:
-    if not queue.empty():
-        command = queue.get()
-        logger.info("got routing command: %s" % command["command"])
-        if command["command"] == "add_connection":
-            con = command["connection"]
-            connections[con.get_peer_id()] = con
-        elif command["command"] == "remove_connection":
-            con = command["connection"]
-            del connections[con.get_peer_id()]
-        else:
-            logger.error("unknown routing command '%s'!" % command["command"])
-        queue.task_done()
-
-
-
-#router_queue.put({
-    #"command": "add_connection",
-    #"connection": con
-#})
-
+    if args.publish:
+        router.publish(args.publish, "yayy!!");
+    time.sleep(2)
 
