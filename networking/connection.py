@@ -27,7 +27,7 @@ class LoggingIPFilter(logging.Filter):
         return True
 
 
-class Connection:
+class Connection(object):
     in_shutdown = False
     
     def __init__(self, node_id, queue, sock, addr, start_init):

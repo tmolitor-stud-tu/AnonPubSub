@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 from .connection import Connection
 
 
-class Listener:
+class Listener(object):
     run = True
     node_id = ""
     router_queue = None

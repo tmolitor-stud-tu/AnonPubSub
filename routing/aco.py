@@ -30,28 +30,11 @@ class ACO(Router):
     def __init__(self, node_id, queue):
         super(ACO, self).__init__(node_id, queue)
         self.pheromones = {}
-        self.subscriptions = {}
         self.publishing = set()
         self.create_overlay_threads = []
         self.evaporation_thread = Thread(name="local::"+self.node_id+"::_evaporation", target=self._evaporation)
         self.evaporation_thread.start()
-        logger.info("ACO Router initialized...")
-    
-    def publish(self, channel, data):
-        logger.info("Publishing data on channel '%s'..." % str(channel))
-        self._init_channel(channel)
-        self.publishing.add(channel)
-        self._route_data(Message("%s_data" % self.__class__.__name__, {"channel": channel, "data": data, "ttl": max(6, MAX_ROUNDS)}))
-    
-    def subscribe(self, channel, callback):
-        if channel in self.subscriptions:
-            return
-        logger.info("Subscribing for data on channel '%s'..." % str(channel))
-        self._init_channel(channel)
-        self.subscriptions[channel] = callback
-        t = Thread(name="local::"+self.node_id+"::_create_overlay", target=self._create_overlay, args=(channel,))
-        self.create_overlay_threads.append(t)
-        t.start()
+        logger.info("%s Router initialized..." % self.__class__.__name__)
     
     def stop(self):
         logger.warning("Stopping router!")
@@ -92,33 +75,40 @@ class ACO(Router):
         
         return numpy.random.choice(list(population.values()), p=weights, size=1)[0]
 
+    def _do_create_overlay(self, channel, round_count):
+        #send out ANT_COUNT ants
+        for i in range(0, ANT_COUNT):
+            ant_id = str(uuid.uuid4())
+            strictness = (random.random() * 20) % 20       #strictness in [0, 20)
+            ttl = max(6, round_count)
+            path = [self.node_id]
+            ant = {
+                "id": ant_id,
+                "channel": channel,
+                "subscriber": self.node_id,
+                "ttl": ttl,
+                "strictness": strictness,
+                "path": path,
+                "returning": False
+            }
+            con = self._pheromone_choice(ant["channel"], self.connections, ant["strictness"])
+            if con:
+                logger.info("%s: Round %d Sending out new searching ant %s to %s..." % (ant["channel"], round_count, str(ant), str(con)))
+                con.send_msg(Message("%s_ant" % self.__class__.__name__, ant))
+            else:
+                logger.warning("Cannot route new searching ant, killing ant %s!" % str(ant))
+    
     def _create_overlay(self, channel):
         while True:
             logger.info("(Re)Creating overlay for channel '%s'..." % channel)
             round_count = 0
-            while not Router.stopped.isSet() and round_count < MAX_ROUNDS and len(self.connections):
-                #send out ANT_COUNT ants
-                for i in range(0, ANT_COUNT):
-                    ant_id = str(uuid.uuid4())
-                    strictness = (random.random() * 20) % 20       #strictness in [0, 20)
-                    ttl = max(6, round_count)
-                    path = [self.node_id]
-                    ant = {
-                        "id": ant_id,
-                        "channel": channel,
-                        "subscriber": self.node_id,
-                        "ttl": ttl,
-                        "strictness": strictness,
-                        "path": path,
-                        "returning": False
-                    }
-                    con = self._pheromone_choice(ant["channel"], self.connections, ant["strictness"])
-                    if con:
-                        logger.info("%s: Round %d Sending out new searching ant %s to %s..." % (ant["channel"], round_count, str(ant), str(con)))
-                        con.send_msg(Message("%s_ant" % self.__class__.__name__, ant))
-                    else:
-                        logger.warning("Cannot route new searching ant, killing ant %s!" % str(ant))
-                    
+            while not Router.stopped.isSet() and round_count < MAX_ROUNDS:
+                self.queue.put({
+                    "command": "ACO_create_overlay",
+                    "channel": channel,
+                    "round_count": round_count
+                })
+                
                 #wait ANT_WAITING_TIME for ants to return before starting next round
                 Router.stopped.wait(ANT_WAITING_TIME)
                 round_count += 1
@@ -138,7 +128,7 @@ class ACO(Router):
         
         if ant["returning"]:
             #update pheromones on edge to incoming node, serialize pheromones write access through command queue (using _process_command())
-            if ant["channel"] not in self.publishing:   #ant didn't start its way here --> put pheromones on incoming edge
+            if ant["channel"] not in self.publishing and incoming_connection:   #ant didn't start its way here --> put pheromones on incoming edge
                 self.queue.put({
                     "command": "ACO_update_pheromones",
                     "channel": ant["channel"],
@@ -220,19 +210,36 @@ class ACO(Router):
             self.pheromones[channel] = {}
     
     def _process_command(self, command):
-        if command["command"] == "add_connection":
-            con = command["connection"]
-            peer = con.get_peer_id()
-            self.connections[peer] = con
-        elif command["command"] == "remove_connection":
-            con = command["connection"]
-            peer = con.get_peer_id()
-            del self.connections[peer]
+        if Router.stopped.isSet():
+            return      #don't do anything here if we are stopped
+        
+        if command["command"] == "remove_connection":
+            #call parent class for common initialisations
+            super(ACO, self)._process_command(command)
             #clean up pheromones
+            peer = command["connection"].get_peer_id()
             for channel in self.pheromones:
                 if peer in self.pheromones[channel]:
                     del self.pheromones[channel][peer]
+        elif command["command"] == "subscribe":
+            self._init_channel(command["channel"])
+            #call parent class for common initialisations
+            super(ACO, self)._process_command(command)
+            t = Thread(name="local::"+self.node_id+"::_create_overlay", target=self._create_overlay, args=(command["channel"],))
+            self.create_overlay_threads.append(t)
+            t.start()
+        elif command["command"] == "publish":
+            #no need to call parent class here, doing everything on our own
+            self._init_channel(command["channel"])
+            self.publishing.add(command["channel"])
+            msg = Message("%s_data" % self.__class__.__name__, {
+                "channel": command["channel"],
+                "data": command["data"],
+                "ttl": max(6, MAX_ROUNDS)
+            })
+            self._route_data(msg)
         elif command["command"] == "message_received":
+            #no need to call parent class here, doing everything on our own
             con = command["connection"]
             msg = command["message"]
             msg_type = msg.get_type()
@@ -240,6 +247,7 @@ class ACO(Router):
                 self._route_data(msg, con)
             elif msg_type == "%s_ant" % self.__class__.__name__:
                 self._route_ant(msg, con)
+        #all following commands are specific to this routing implementation and not implemented in our parent class
         elif command["command"] == "ACO_update_pheromones":
             if command["channel"] not in self.pheromones:
                 logger.error("Unknown channel '%s' while updating pheromones, skipping update!" % command["channel"])
@@ -257,9 +265,12 @@ class ACO(Router):
                 pheromones_on_edge[command["subscriber"]] += ratio * command["pheromones"]
                 logger.info("Pheromones updated: %s" % str(self.pheromones))
         elif command["command"] == "ACO_evaporation":
-            self._do_evaporation(); 
+            self._do_evaporation();
+        elif command["command"] == "ACO_create_overlay":
+            self._do_create_overlay(command["channel"], command["round_count"])
         else:
-            logger.error("Unknown routing command '%s', ignoring command!" % command["command"])
+            #for everything not handled here: call parent class
+            super(ACO, self)._process_command(command)
     
     def _evaporation(self):
         logger.debug("pheromones evaporation thread started...")

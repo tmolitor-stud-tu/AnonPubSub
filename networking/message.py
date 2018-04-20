@@ -3,7 +3,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class Message:
+class Message(object):
     msg = {"type": None, "data": {}}		# default values (None, {})
     
     # no empty dict as default for data because this will create one single dict object used every time this constructor is called without data argument
