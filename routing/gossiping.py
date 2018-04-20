@@ -8,12 +8,12 @@ from .base import Router
 
 
 INITIAL_TTL = 60
-INITIAL_WALKERS = 5
+GOSSIPING_PEERS = 2
 
-class Randomwalk(Router):
+class Gossiping(Router):
     
     def __init__(self, node_id, queue):
-        super(Randomwalk, self).__init__(node_id, queue)
+        super(Gossiping, self).__init__(node_id, queue)
         self.publish_ttl = INITIAL_TTL
         logger.info("%s Router initialized..." % self.__class__.__name__)
     
@@ -31,11 +31,10 @@ class Randomwalk(Router):
         if not len(connections):
             logger.warning("No additional peers found, cannot route data further!")
             return
-        #use at most INITIAL_WALKERS randomly selected peers to send our message to if we are the origin
-        #or only 1 peer to pass the message to if we are not the origin
+        #use at most GOSSIPING_PEERS randomly selected peers to send our message to
         connections = list(numpy.random.choice(
             connections,
-            size=min(len(connections), INITIAL_WALKERS if not incoming_connection else 1)
+            size=min(len(connections), GOSSIPING_PEERS)
         ))
         for node_id in connections:
             self.connections[node_id].send_msg(msg)

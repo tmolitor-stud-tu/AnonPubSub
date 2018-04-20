@@ -4,7 +4,7 @@ from threading import Event
 import logging
 logger = logging.getLogger(__name__)
 
-from networking import Connection
+from networking import Connection, Message
 
 
 class Router(object):

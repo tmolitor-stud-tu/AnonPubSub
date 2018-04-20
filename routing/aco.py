@@ -178,10 +178,12 @@ class ACO(Router):
         if msg["ttl"] <= 0:
             logger.warning("Ignoring data because of expired ttl!")
             return
-        self._init_channel(msg["channel"])
-        msg["ttl"] -= 1
+        
         if msg["channel"] in self.subscriptions:
             self.subscriptions[msg["channel"]](msg["data"])        #inform own subscriber of new data
+        
+        self._init_channel(msg["channel"])
+        msg["ttl"] -= 1
         
         #calculate next nodes to route messages to
         incoming_node = incoming_connection.get_peer_id() if incoming_connection else None
