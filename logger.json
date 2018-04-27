@@ -6,7 +6,7 @@
 			"format": "%(asctime)s [%(levelname)-7s] %(name)s {%(threadName)s} %(filename)s:%(lineno)d: %(message)s"
 		},
 		"with_ip": {
-			"format": "%(asctime)s [%(levelname)-7s] %(name)s@%(ip)s:%(port)d {%(threadName)s} %(filename)s:%(lineno)d: %(message)s"
+			"format": "%(asctime)s [%(levelname)-7s] %(name)s {%(threadName)s} %(filename)s:%(lineno)d: %(message)s"
 		}
 	},
 

@@ -60,6 +60,9 @@ class Router(object):
         elif command["command"] == "message_received":
             if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
                 self._route_data(command["message"], command["connection"])
+        elif command["command"] == "covert_message_received":
+            if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
+                self._route_data(command["message"], command["connection"])
         elif command["command"] == "subscribe":
             if command["channel"] in self.subscriptions:
                 return

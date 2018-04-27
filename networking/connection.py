@@ -1,178 +1,315 @@
-import math
 import time
+import os
+import binascii
+import codecs
 import struct
 import socket
 import queue
-from threading import Thread
+from collections import deque
+from threading import Thread, Event, RLock, current_thread, Timer
 import json
-import logging
-logger = logging.getLogger(__name__)
-logger.propagate = False
-with open("logger.json", 'r') as logging_configuration_file:
-    fmt = json.load(logging_configuration_file)["formatters"]["with_ip"]["format"]
-    log_formatter = logging.Formatter(fmt)
-log_handler = logging.StreamHandler() 
-log_handler.setFormatter(log_formatter)
-logger.addHandler(log_handler)
 
+#crypto imports
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+
+#logging
+import logging
+def configure_logger(addr=None, instance_id=None):
+    logger = logging.getLogger("%s[%s]@%s:%s" % (__name__, str(instance_id), str(addr[0]), str(addr[1])))
+    return logger
+logger = logging.getLogger(__name__)    #default logger
+
+# own classes
 from .message import Message
 
-class LoggingIPFilter(logging.Filter):
-    def __init__(self, addr):
-        self.addr = addr
-    
-    def filter(self, record):
-        record.ip = str(self.addr[0])
-        record.port = int(self.addr[1])
-        return True
 
+MAX_COVERT_PAYLOAD = 1024   # always 94 bytes overhead for ping added to final packet
+PING_INTERVAL = 1.0
+MAX_MISSING_PINGS = 4       # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
+MAX_RECONNECTS = 3          # maximum consecutive reconnects after a connection failed
+ENCRYPT_PACKETS = True
 
 class Connection(object):
-    in_shutdown = False
+    reconnections_stopped = Event()
+    node_id = None
+    router_queue = None
+    listener = None
+    instances_lock = RLock()
+    instances = {}
+    len_size = len(struct.pack("!Q", 0))	# calculate length of packed unsigned long long int
     
-    def __init__(self, node_id, queue, sock, addr, start_init):
-        if Connection.in_shutdown:      #abort connection here
-            raise ValueError("Cannot connect on shutdown!")
-        self.is_dead = False
-        self.node_id = node_id
-        self.len_size = len(struct.pack("!Q", 0))	# calculate length of packed unsigned long long int
-        self.router_queue = queue
-        self.sock = sock
+    # public static method to initialize networking
+    def init(node_id, queue, host):
+        Connection.node_id = node_id
+        Connection.router_queue = queue
+        Connection.listener = Listener(node_id, host)
+    
+    # public static factory method for new outgoing instances
+    def connect_to(host, reconnect_try=0):
+        return Connection._new((host, 9999), True, reconnect_try)
+    
+    # internal static factory method for incoming packets used by listener class
+    def _incoming_data(addr, data):
+        con = Connection._new(addr, False, 0)
+        con._incoming(data)
+    
+    # internal factory method doing the actual work
+    def _new(addr, active_init, reconnect_try):
+        if not Connection.listener:
+            raise ValueError("Network not initialized, call Connection.init() first!")
+        with Connection.instances_lock:
+            if str(addr) not in Connection.instances or Connection.instances[str(addr)].is_dead.is_set():
+                Connection.instances[str(addr)] = Connection(addr, active_init, reconnect_try)
+            con = Connection.instances[str(addr)]
+        if active_init:
+            con.active_init = active_init   # force right value (used on reconnect)
+        return con
+    
+    # static method to terminate all connections
+    def shutdown():
+        # stop listener
+        Connection.listener.stop()
+        # stop reconnections from happening
+        Connection.reconnections_stopped.set()
+        # terminate all connections (has to be done AFTER stopping the listener so to not create new connections by incoming packets)
+        with Connection.instances_lock:
+            for addr, con in list(Connection.instances.items()):
+                con.terminate()
+        # close socket
+        Connection.listener.get_socket().close()
+        # cleanup static class attributes
+        Connection.listener = None
+        Connection.node_id = None
+        Connection.router_queue = None
+        
+    # class constructor
+    def __init__(self, addr, active_init, reconnect_try):
         self.addr = addr
-        logger.addFilter(LoggingIPFilter(self.addr))
+        self.instance_id = str(binascii.b2a_hex(os.urandom(2)), "ascii")
+        self.logger=configure_logger(self.addr, self.instance_id)
+        self.is_dead = Event()
+        self.X25519_key = X25519PrivateKey.generate()
+        self.peer_key = None
+        self.pinger_thread = None
+        self.covert_msg_queue = deque()
+        self.watchdog_lock = RLock()
+        self.watchdog_counter = MAX_MISSING_PINGS    # connection timeout = MAX_MISSING_PINGS * PING_INTERVAL
+        self.watchdog_thread = None
+        self.connection_state = 'IDLE'
+        self.active_init = active_init
+        self.reconnect_thread = None
+        self.reconnect_try = reconnect_try
         
-        self.sock.settimeout(16)     #16 second timeout in init phase
-        timer=time.perf_counter()
-        if start_init:		# start with sending init message
-            logger.debug("sending init message to %s" % str(self.addr))
-            self.send_msg(Message("init", {"node": self.node_id}))
-            if self._receive_init_message():
-                raise ValueError("Initialization failed!")	# error happened, stop here
-        else:			# wait for init message
-            logger.debug("waiting for init message from %s" % str(self.addr))
-            if self._receive_init_message():
-                raise ValueError("Initialization failed!")	# error happened, stop here
-            logger.debug("sending init message to %s" % str(self.addr))
-            self.send_msg(Message("init", {"node": self.node_id}))
+        self.logger.info("Initializing new connection with: %s (connect #%s)" % (str(addr), str(self.reconnect_try)))
+        if self.active_init:
+            self._send_init_msg("SYN")
         
-        # set SO_SNDTIMEO to max(1, 2 * RTT)
-        timer = math.ceil(time.perf_counter()-timer)
-        self.sndtimeo = max(1, 2 * timer)
-        logger.debug("RTT: %d, sndtimeo: %d" % (timer, self.sndtimeo))
-        timeval = struct.pack("ll", self.sndtimeo, 0)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO, timeval)
-    
-    def get_peer_id(self):
-        return self.peer_id
-    
-    def start_receiver(self):
-        self.thread = Thread(name="remote::"+self.peer_id+"::_recv_thread", target=self._recv_thread)
-        self.thread.start()
+        # init watchdog thread to terminate connection after MAX_MISSING_PINGS consecutive failures to receive a ping
+        self.watchdog_thread = Thread(name="local::"+Connection.node_id+"::_watchdog", target=self._watchdog)
+        self.watchdog_thread.start()
     
     def terminate(self):
-        logger.info("Terminating connection with %s" % str(self.addr))
-        self._close()
-        self.thread.join()
-        logger.debug("connection with %s terminated successfully" % str(self.addr))
-    
-    def shutdown():
-        Connection.in_shutdown = True
+        if self.is_dead.is_set():
+            return
+        self.logger.info("Terminating connection")
+        self.is_dead.set()
+        with Connection.instances_lock:
+            if str(self.addr) in Connection.instances:
+                del Connection.instances[str(self.addr)]
+        if self.connection_state == "ESTABLISHED":
+            Connection.router_queue.put({
+                "command": "remove_connection",
+                "connection": self
+            })
+        if self.pinger_thread and self.pinger_thread != current_thread():
+            self.pinger_thread.join()
+        if self.watchdog_thread and self.watchdog_thread != current_thread():
+            self.watchdog_thread.join()
+        if self.reconnect_thread and self.reconnect_thread != current_thread():
+            self.reconnect_thread.join()
+        self.logger.debug("connection terminated successfully")
     
     def send_msg(self, msg):
-        if self.is_dead:
+        if self.is_dead.is_set():
             raise BrokenPipeError("Connection already closed!")
-        serialized = str(msg)
-        logger.debug("sending json message(%d): %s" % (len(serialized), serialized))
-        data = struct.pack("!Q", len(serialized))	# network byte order (big endian) length of the json string
-        data = data + serialized.encode("UTF-8")	# json string
-        try:
-            self.sock.sendall(data)
-        except socket.error as err:
-            logger.info("Got error '%s' in socket.sendall, stopping receiver thread and marking connection object as dead" % str(err))
-            self._close()
-            # closing the socket and setting is_dead to True should eventually stop the thread, just wait for it to be finished doing its cleanup
-            #self.thread.stop()
-            self.thread.join()
+        data = self._encrypt(self._pack(msg))
+        Connection.listener.get_socket().sendto(data, self.addr)
+    
+    def send_covert_msg(self, msg):
+        if self.is_dead.is_set():
+            raise BrokenPipeError("Connection already closed!")
+        self.covert_msg_queue.append(str(codecs.encode(self._pack(msg), "hex"), 'ascii'))
+    
+    def get_peer_id(self):
+        #return str(self.addr)
+        return str(Connection.node_id)
     
     def __str__(self):
-        return "Connection<%s@%s>" % (str(self.peer_id), str(self.addr))
+        return "Connection<%s@%s>" % (str(self.instance_id), str(self.addr))
     
-    def _close(self):
-        self.is_dead = True	    # no locking needed because this is only set to True once and no timing issues are involved in testing this value
-        try:
-            self.sock.shutdown(socket.SHUT_RDWR)
-        except:
-            pass
-        try:
-            self.sock.close()
-        except:
-            pass
+    def _send_init_msg(self, flag):
+        self.logger.debug("sending init message '%s' from state '%s'..." % (str(flag), str(self.connection_state)))
+        data = bytearray(flag, 'ascii')
+        if flag == "SYN" or flag == "SYN-ACK":      # add key exchange data to SYN and SYN-ACK messages
+            data += self.X25519_key.public_key().public_bytes()
+        self.connection_state = flag
+        self.logger.debug("outgoing packet(%s): %s" % (str(len(data)), str(data)))
+        Connection.listener.get_socket().sendto(data, self.addr)
     
-    def _recv_thread(self):
-        logger.debug("receiver thread for %s started" % str(self.addr))
-        self.sock.settimeout(self.sndtimeo * 2)     #double our send timeout (=4 * RTT)
-        while not self.is_dead:
-            try:
-                msg = self._recv_msg()
-                if Connection.in_shutdown:
-                    break
-                self.router_queue.put({"command": "message_received", "connection": self, "message": msg})
-            except socket.timeout as timeout:
-                continue;
-            except (socket.error, ValueError) as err:
-                logger.info("Got error '%s' in receiver thread, stopping thread and marking connection object as dead" % str(err))
-                break	# stop receiver thread and mark connection as dead
-        if Connection.in_shutdown:
-            logger.info("Shutdown in progress, stopping receiver thread and marking connection object as dead")
-            self._close()
-            return;
-        self._close()
-        self.router_queue.put({
-            "command": "remove_connection",
+    def _derive_key(self, data):
+        try:
+            if len(data) != 32:
+                raise ValueError("Key material size is not 32 bytes")
+            # derive symmetric peer_key used to encrypt further communication
+            self.peer_key = HKDF(
+                algorithm=hashes.BLAKE2s(32),
+                length=32,
+                salt=None,
+                info=None,
+                backend=default_backend()
+            ).derive(self.X25519_key.exchange(X25519PublicKey.from_public_bytes(data)))
+        except Exception as e:
+            self.logger.warning("Could not derive key on connection init, terminating connection! Exception: %s" % str(e))
+            self.terminate()
+    
+    def _finalize_connection(self):
+        # our connection is now established, inform router of the new connection and activate pinger thread
+        self.connection_state = "ESTABLISHED"
+        self.reconnect_try = 0  # connection successful, reset reconnection counter
+        Connection.router_queue.put({
+            "command": "add_connection",
             "connection": self
         })
-        logger.info("Trying to reconnect to %s" % str((self.addr[0], 9999)))
-        connect_to(self.node_id, self.router_queue, self.addr[0])
-        logger.debug("receiver thread for %s stopped" % str(self.addr))
+        self.pinger_thread = Thread(name="local::"+Connection.node_id+"::_pinger", target=self._pinger)
+        self.pinger_thread.start()
     
-    def _receive_init_message(self):
+    # process incoming raw packet data
+    def _incoming(self, packet):
+        self.logger.debug("incoming packet(%s)" % str(len(packet)))
+        if not self.connection_state == "ESTABLISHED":  # init phase (unencrypted)
+            if self.connection_state == "IDLE" and packet[:3] == b"SYN":
+                self._derive_key(packet[3:])
+                self._send_init_msg("SYN-ACK")
+            elif self.connection_state == "SYN-ACK" and packet[:3] == b"ACK":
+                self._finalize_connection()
+            elif self.connection_state == "SYN" and packet[:7] == b"SYN-ACK":
+                self._derive_key(packet[7:])
+                self._send_init_msg("ACK")
+                self._finalize_connection()
+            # this can happen if our first SYN was lost
+            elif self.connection_state == "SYN" and packet[:3] == b"SYN":
+                self._derive_key(packet[3:])
+                self._send_init_msg("SYN-ACK")
+            else:
+                #self.logger.warning("Unknown init packet in state '%s': %s" % (str(self.connection_state), str(packet)))
+                pass    # ignore everything else (the connection will be garbage collected by watchdog soon)
+        else:   # working phase (encrypted)
+            messages = self._unpack(packet)
+            for msg in messages:
+                if msg.get_type() == "ping":
+                    # update ping watchdog
+                    with self.watchdog_lock:
+                        self.watchdog_counter = MAX_MISSING_PINGS
+                    # process covert messages
+                    for covert_msg in self._unpack(codecs.decode(msg["covert_messages"], "hex"), False):
+                        Connection.router_queue.put({"command": "covert_message_received", "connection": self, "message": covert_msg})
+                else:
+                    Connection.router_queue.put({"command": "message_received", "connection": self, "message": msg})
+    
+    def _watchdog(self):
+        while not self.is_dead.wait(PING_INTERVAL):
+            with self.watchdog_lock:
+                self.watchdog_counter -= 1
+                copy = self.watchdog_counter
+            if copy <= 0:
+                self.logger.warning("Ping watchdog triggered in connection state '%s'!" % self.connection_state)
+                self.terminate()
+                if self.active_init and self.reconnect_try <= MAX_RECONNECTS:
+                    if not Connection.reconnections_stopped.is_set():
+                        self.reconnect_thread = Thread(name="local::"+Connection.node_id+"::_reconnect", target=self._reconnect)
+                        self.reconnect_thread.start()
+                    else:
+                        self.logger.info("Reconnections disallowed by shutdown, not trying to reconnect...")
+                else:
+                    self.logger.info("No active init or maximum reconnects of %s reached, not trying to reconnect..." % str(MAX_RECONNECTS))
+    
+    def _reconnect(self):
+        # try to reconnect after PING_INTERVAL + random(0, 2) seconds
+        reconnect = PING_INTERVAL + (float(int.from_bytes(os.urandom(2), byteorder='big', signed=False))/32768.0)
+        self.logger.info("Reconnecting in %s seconds..." % str(reconnect))
+        if not Connection.reconnections_stopped.wait(reconnect):
+            Connection.connect_to(self.addr[0], self.reconnect_try+1)
+        else:
+            self.logger.info("Reconnection cancelled...")
+    
+    # the pinger utilizes our covert channel filled with messages from covert_msg_queue
+    def _pinger(self):
+        while not self.is_dead.wait(PING_INTERVAL):
+            data = ""
+            bytes_left = MAX_COVERT_PAYLOAD
+            while len(self.covert_msg_queue) and len(self.covert_msg_queue[0]) < bytes_left:
+                serialized = self.covert_msg_queue.popleft()
+                data += serialized
+                bytes_left -= len(serialized)
+            try:
+                self.send_msg(Message("ping", {"covert_messages": data, "padding": "".ljust(bytes_left, " ")}))
+            except:
+                pass        # ignore errors here (normally only occuring during shutdown)
+    
+    def _encrypt(self, packet):
+        if not ENCRYPT_PACKETS:
+            return packet
+        chacha = ChaCha20Poly1305(self.peer_key)
+        nonce = os.urandom(12)
+        return nonce + chacha.encrypt(nonce, packet, None)
+    
+    def _decrypt(self, packet):
+        if not ENCRYPT_PACKETS:
+            return packet
+        chacha = ChaCha20Poly1305(self.peer_key)
+        nonce = packet[:12]
+        ciphertext = packet[12:]
         try:
-            msg = self._recv_msg()
-            if msg.get_type() != "init":
-                logger.warning("Got unexpected message of type '%s' while initiating connection sequence, marking connection object as dead" % str(mg.get_type()))
-                self._close()
-                return
-            self.peer_id = msg["node"]
-            logger.info("Got peer id %s from %s" % (self.peer_id, str(self.addr)))
-            if self.peer_id == self.node_id:
-                logger.warning("Peer ID %s equals own ID, dropping connection" % self.peer_id)
-                raise ValueError("Peer ID equals own ID!")
-        except (socket.error, ValueError) as err:
-            logger.warning("Got error '%s' while initiating connection sequence, marking connection object as dead" % str(err))
-            self._close()
-            return True
-        return False
+            return chacha.decrypt(nonce, ciphertext, None)
+        except:
+            return None
     
-    def _recv_msg(self):
-        data = self._recv_full(self.len_size)
-        (json_len,) = struct.unpack("!Q", data)
-        logger.debug("got new message of size %d" % json_len)
-        if json_len > 4194304:		# 4 MiB
-            raise ValueError("Message size of %d > 4194304 (4MiB)" % json_len)
-        data = self._recv_full(json_len)
-        logger.debug("message json contents: %s" % data.decode("UTF-8"))
-        return Message(data)
+    def _pack(self, msg):
+        serialized = str(msg)
+        self.logger.debug("packed json message(%d): %s" % (len(serialized), serialized))
+        size = struct.pack("!Q", len(serialized))	# network byte order (big endian) length of the json string
+        return size + serialized.encode("ISO-8859-1")	# json string
+        
+    def _unpack(self, packet, decrypt=True):
+        if decrypt:
+            packet = self._decrypt(packet)
+            if not packet:
+                self.logger.warning("Could not decrypt packet, ignoring it!")
+                return []   # packet cannot be decrypted, ignore it
+        # unpack every message object in this packet
+        messages = []
+        while len(packet) > Connection.len_size:  # fewer bytes than Connection.len_size can only be padding bytes
+            data, packet = self._extract(packet, Connection.len_size)
+            (json_len,) = struct.unpack("!Q", data)
+            if not json_len:
+                break;      # only padding bytes coming now, skip them
+            self.logger.debug("got new message of size %d" % json_len)
+            if json_len > 65536:		# 64 KiB
+                raise ValueError("Message size of %d > 65536 (64 KiB)" % json_len)
+            data, packet = self._extract(packet, json_len)
+            self.logger.debug("message json contents: %s" % data.decode("ISO-8859-1"))
+            messages.append(Message(data))
+        return messages
     
-    def _recv_full(self, size):
-        data = bytearray()
-        while size > 0:
-            new_data = self.sock.recv(size)
-            if len(new_data) == 0:
-                raise BrokenPipeError("Connection broken!")
-            size -= len(new_data)
-            data = data + new_data
-        return data
+    def _extract(self, data, size):
+        if size > len(data):
+            raise ValueError("Packet truncated!")
+        return data[:size], data[size:]
 
 
 # circular imports!
-from .client_connection import connect_to
+from .listener import Listener
