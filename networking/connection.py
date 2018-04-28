@@ -94,6 +94,7 @@ class Connection(object):
         self.is_dead = Event()
         self.X25519_key = X25519PrivateKey.generate()
         self.peer_key = None
+        self.peer_id = None
         self.pinger_thread = None
         self.covert_msg_queue = deque()
         self.watchdog_lock = RLock()
@@ -146,15 +147,16 @@ class Connection(object):
     
     def get_peer_id(self):
         #return str(self.addr)
-        return str(Connection.node_id)
+        return str(self.peer_id)
     
     def __str__(self):
-        return "Connection<%s@%s>" % (str(self.instance_id), str(self.addr))
+        return "Connection<%s@%s[%s]>" % (str(self.peer_id), str(self.addr), str(self.instance_id))
     
     def _send_init_msg(self, flag):
         self.logger.debug("sending init message '%s' from state '%s'..." % (str(flag), str(self.connection_state)))
         data = bytearray(flag, 'ascii')
         if flag == "SYN" or flag == "SYN-ACK":      # add key exchange data to SYN and SYN-ACK messages
+            data += bytes(Connection.node_id, 'ascii')
             data += self.X25519_key.public_key().public_bytes()
         self.connection_state = flag
         self.logger.debug("outgoing packet(%s): %s" % (str(len(data)), str(data)))
@@ -189,20 +191,23 @@ class Connection(object):
     
     # process incoming raw packet data
     def _incoming(self, packet):
-        self.logger.debug("incoming packet(%s)" % str(len(packet)))
+        self.logger.debug("incoming packet(%s): %s" % (str(len(packet)), str(packet)))
         if not self.connection_state == "ESTABLISHED":  # init phase (unencrypted)
             if self.connection_state == "IDLE" and packet[:3] == b"SYN":
-                self._derive_key(packet[3:])
+                self.peer_id = packet[3:39].decode("ascii")
+                self._derive_key(packet[39:])
                 self._send_init_msg("SYN-ACK")
             elif self.connection_state == "SYN-ACK" and packet[:3] == b"ACK":
                 self._finalize_connection()
             elif self.connection_state == "SYN" and packet[:7] == b"SYN-ACK":
-                self._derive_key(packet[7:])
+                self.peer_id = packet[7:43].decode("ascii")
+                self._derive_key(packet[43:])
                 self._send_init_msg("ACK")
                 self._finalize_connection()
             # this can happen if our first SYN was lost
             elif self.connection_state == "SYN" and packet[:3] == b"SYN":
-                self._derive_key(packet[3:])
+                self.peer_id = packet[3:39].decode("ascii")
+                self._derive_key(packet[39:])
                 self._send_init_msg("SYN-ACK")
             else:
                 #self.logger.warning("Unknown init packet in state '%s': %s" % (str(self.connection_state), str(packet)))
@@ -228,7 +233,7 @@ class Connection(object):
             if copy <= 0:
                 self.logger.warning("Ping watchdog triggered in connection state '%s'!" % self.connection_state)
                 self.terminate()
-                if self.active_init and self.reconnect_try <= MAX_RECONNECTS:
+                if self.active_init and self.reconnect_try < MAX_RECONNECTS:
                     if not Connection.reconnections_stopped.is_set():
                         self.reconnect_thread = Thread(name="local::"+Connection.node_id+"::_reconnect", target=self._reconnect)
                         self.reconnect_thread.start()
@@ -279,10 +284,10 @@ class Connection(object):
             return None
     
     def _pack(self, msg):
-        serialized = str(msg)
+        serialized = bytes(msg) # json string
         self.logger.debug("packed json message(%d): %s" % (len(serialized), serialized))
         size = struct.pack("!Q", len(serialized))	# network byte order (big endian) length of the json string
-        return size + serialized.encode("ISO-8859-1")	# json string
+        return size + serialized
         
     def _unpack(self, packet, decrypt=True):
         if decrypt:
@@ -297,11 +302,11 @@ class Connection(object):
             (json_len,) = struct.unpack("!Q", data)
             if not json_len:
                 break;      # only padding bytes coming now, skip them
-            self.logger.debug("got new message of size %d" % json_len)
+            self.logger.debug("got new packed message of size %d" % json_len)
             if json_len > 65536:		# 64 KiB
                 raise ValueError("Message size of %d > 65536 (64 KiB)" % json_len)
             data, packet = self._extract(packet, json_len)
-            self.logger.debug("message json contents: %s" % data.decode("ISO-8859-1"))
+            self.logger.debug("unpacked message json contents: %s" % data.decode("UTF-8"))
             messages.append(Message(data))
         return messages
     

@@ -1,4 +1,5 @@
 import json
+import base64
 import logging
 logger = logging.getLogger(__name__)
 
@@ -35,3 +36,6 @@ class Message(object):
     # serialisation interface
     def __str__(self):
         return json.dumps(self.msg, separators=(',',':'))
+    
+    def __bytes__(self):
+        return str(self).encode("UTF-8")
