@@ -1,13 +1,8 @@
-import time
 import os
-import binascii
 import codecs
 import struct
-import socket
-import queue
 from collections import deque
 from threading import Thread, Event, RLock, current_thread, Timer
-import json
 
 #crypto imports
 from cryptography.hazmat.backends import default_backend
@@ -27,7 +22,7 @@ logger = logging.getLogger(__name__)    #default logger
 from .message import Message
 
 
-MAX_COVERT_PAYLOAD = 1024   # always 94 bytes overhead for ping added to final packet
+MAX_COVERT_PAYLOAD = 1200   # + always 94 bytes overhead for ping added to final packet
 PING_INTERVAL = 1.0
 MAX_MISSING_PINGS = 4       # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
 MAX_RECONNECTS = 3          # maximum consecutive reconnects after a connection failed
@@ -89,7 +84,7 @@ class Connection(object):
     # class constructor
     def __init__(self, addr, active_init, reconnect_try):
         self.addr = addr
-        self.instance_id = str(binascii.b2a_hex(os.urandom(2)), "ascii")
+        self.instance_id = str(codecs.encode(os.urandom(2), "hex"), 'ascii')
         self.logger=configure_logger(self.addr, self.instance_id)
         self.is_dead = Event()
         self.X25519_key = X25519PrivateKey.generate()
@@ -241,12 +236,12 @@ class Connection(object):
                     else:
                         self.logger.info("Reconnections disallowed by shutdown, not trying to reconnect...")
                 else:
-                    self.logger.info("No active init or maximum reconnects of %s reached, not trying to reconnect..." % str(MAX_RECONNECTS))
+                    self.logger.info("Not active_init or maximum reconnects of %s reached, not trying to reconnect..." % str(MAX_RECONNECTS))
     
     def _reconnect(self):
-        # try to reconnect after PING_INTERVAL + random(0, 2) seconds
-        reconnect = PING_INTERVAL + (float(int.from_bytes(os.urandom(2), byteorder='big', signed=False))/32768.0)
-        self.logger.info("Reconnecting in %s seconds..." % str(reconnect))
+        # try to reconnect after (PING_INTERVAL * MAX_MISSING_PINGS) + random(0, 2) seconds
+        reconnect = (PING_INTERVAL * MAX_MISSING_PINGS) + (float(int.from_bytes(os.urandom(2), byteorder='big', signed=False))/32768.0)
+        self.logger.info("Reconnecting in %.3f seconds..." % reconnect)
         if not Connection.reconnections_stopped.wait(reconnect):
             Connection.connect_to(self.addr[0], self.reconnect_try+1)
         else:

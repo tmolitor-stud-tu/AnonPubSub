@@ -1,14 +1,13 @@
 import json
-import base64
 import logging
 logger = logging.getLogger(__name__)
 
 
 class Message(object):
-    msg = {"type": None, "data": {}}		# default values (None, {})
     
     # no empty dict as default for data because this will create one single dict object used every time this constructor is called without data argument
     def __init__(self, msg_type=None, data=None):
+        self.msg = {"type": None, "data": {}}		# default values (None, {})
         if isinstance(msg_type, Message):
             msg_type = bytes(msg_type)
         if isinstance(msg_type, bytearray) or isinstance(msg_type, bytes):
@@ -17,10 +16,9 @@ class Message(object):
             self.set_type(msg_type)
             if isinstance(data, dict):
                 # deep copy everything to account for reference based bugs
-                data = dict(json.loads(json.dumps(data, separators=(',',':'))))
-                self.msg["data"] = data
+                self.msg["data"] = dict(json.loads(json.dumps(data, separators=(',',':'))))
             else:
-                self.msg["data"] = {}
+                self.msg["data"] = dict()
     
     # message type interface
     def set_type(self, msg_type):
