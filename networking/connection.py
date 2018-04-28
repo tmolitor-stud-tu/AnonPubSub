@@ -105,7 +105,7 @@ class Connection(object):
         self.reconnect_thread = None
         self.reconnect_try = reconnect_try
         
-        self.logger.info("Initializing new connection with: %s (connect #%s)" % (str(self.addr), str(self.reconnect_try)))
+        self.logger.info("Initializing new connection with %s (connect #%s)" % (str(self.addr), str(self.reconnect_try)))
         if self.active_init:
             self._send_init_msg("SYN")
         
@@ -188,7 +188,7 @@ class Connection(object):
         })
         self.pinger_thread = Thread(name="local::"+Connection.node_id+"::_pinger", target=self._pinger)
         self.pinger_thread.start()
-        self.logger.info("Connection with: %s initialized" % str(self.addr))
+        self.logger.info("Connection with %s initialized" % str(self.addr))
     
     # process incoming raw packet data
     def _incoming(self, packet):
