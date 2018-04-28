@@ -14,7 +14,6 @@ class Gossiping(Router):
     
     def __init__(self, node_id, queue):
         super(Gossiping, self).__init__(node_id, queue)
-        self.publish_ttl = INITIAL_TTL
         logger.info("%s Router initialized..." % self.__class__.__name__)
     
     def _route_data(self, msg, incoming_connection=None):
@@ -38,3 +37,12 @@ class Gossiping(Router):
         ))
         for node_id in connections:
             self.connections[node_id].send_msg(msg)
+    
+    def _publish_command(self, command):
+        msg = Message("%s_data" % self.__class__.__name__, {
+            "channel": command["channel"],
+            "data": command["data"],
+            "ttl": INITIAL_TTL,
+            "nodes": []
+        })
+        self._route_data(msg)

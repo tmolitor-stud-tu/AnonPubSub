@@ -15,6 +15,7 @@ class Router(object):
         self.node_id = node_id
         self.connections = {}
         self.subscriptions = {}
+        self.publish_ttl = 0
         self.routing_thread = Thread(name="local::"+self.node_id+"::_routing", target=self._routing)
         self.routing_thread.start()
     
@@ -44,39 +45,34 @@ class Router(object):
     def _route_data(self, msg, incoming_connection=None):
         pass
     
-    def _process_command(self, command):
-        if Router.stopped.isSet():
-            return      #don't do anything here if we are stopped
-        
-        #commands defined here can be overwritten and/or used by _process_command() in child classes
-        if command["command"] == "add_connection":
-            con = command["connection"]
-            peer = con.get_peer_id()
-            self.connections[peer] = con
-        elif command["command"] == "remove_connection":
-            con = command["connection"]
-            peer = con.get_peer_id()
-            del self.connections[peer]
-        elif command["command"] == "message_received":
-            if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
-                self._route_data(command["message"], command["connection"])
-        elif command["command"] == "covert_message_received":
-            if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
-                self._route_data(command["message"], command["connection"])
-        elif command["command"] == "subscribe":
-            if command["channel"] in self.subscriptions:
-                return
-            self.subscriptions[command["channel"]] = command["callback"]
-        elif command["command"] == "publish":
-            msg = Message("%s_data" % self.__class__.__name__, {
-                "channel": command["channel"],
-                "data": command["data"],
-                "ttl": self.publish_ttl,
-                "nodes": []
-            })
-            self._route_data(msg)
-        else:
-            logger.error("Unknown routing command '%s', ignoring command!" % command["command"])
+    def _route_covert_data(self, msg, incoming_connection=None):
+        pass
+    
+    def _add_connection_command(self, command):
+        con = command["connection"]
+        peer = con.get_peer_id()
+        self.connections[peer] = con
+    
+    def _remove_connection_command(self, command):
+        con = command["connection"]
+        peer = con.get_peer_id()
+        del self.connections[peer]
+    
+    def _message_received_command(self, command):
+        if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
+            self._route_data(command["message"], command["connection"])
+    
+    def _covert_message_received_command(self, command):
+        if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
+            self._route_covert_data(command["message"], command["connection"])
+    
+    def _subscribe_command(self, command):
+        if command["channel"] in self.subscriptions:
+            return
+        self.subscriptions[command["channel"]] = command["callback"]
+    
+    def _publish_command(self, command):
+        pass    # this command has no common implementation that could be used by child classes
     
     def _routing(self):
         logger.debug("routing thread started...");
@@ -88,8 +84,14 @@ class Router(object):
             except Empty as err:
                 logger.debug("routing queue empty");
                 continue
+            if Router.stopped.isSet():  # don't process anything here if we are stopped
+                break
             logger.debug("got routing command: %s" % command["command"])
-            self._process_command(command)
+            func = "_"+command["command"]+"_command"
+            if hasattr(self, func):
+                getattr(self, func)(command)
+            else:
+                logger.error("Unknown routing command '%s', ignoring command!" % command["command"])
             self.queue.task_done()
         logger.debug("routing thread stopped...")
     

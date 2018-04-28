@@ -22,8 +22,10 @@ parser.add_argument("-u", "--uuid", metavar='UUID', help="Node UUID (default val
 parser.add_argument("-p", "--publish", metavar='TOPIC', help="Topic to publish")
 parser.add_argument("-s", "--subscribe", metavar='TOPIC', help="Topic to subscribe to")
 parser.add_argument("--log", metavar='LOGLEVEL', help="Loglevel to log", default="DEBUG")
+parser.add_argument("--flooding", help="Use Flooding router", action='store_true')
+parser.add_argument("--randomwalk", help="Use Randomwalk router", action='store_true')
 parser.add_argument("--gossiping", help="Use Gossiping router", action='store_true')
-parser.add_argument("--aco", help="Use ACO router", action='store_true', default=True)
+parser.add_argument("--aco", help="Use ACO router (Default)", action='store_true', default=True)
 args = parser.parse_args()
 
 #first of all: configure logging
@@ -57,9 +59,13 @@ signal.signal(signal.SIGINT, sigint_handler)
 #initialize our network listener and router
 queue = Queue()
 networking.Connection.init(args.uuid, queue, args.listen)
-if args.gossiping:
+if args.flooding:
+    router = routing.Flooding(args.uuid, queue)
+elif args.randomwalk:
+    router = routing.Randomwalk(args.uuid, queue)
+elif args.gossiping:
     router = routing.Gossiping(args.uuid, queue)
-if args.aco:
+elif args.aco:
     router = routing.ACO(args.uuid, queue)
 else:
     logger.error("Unknown router specified!")

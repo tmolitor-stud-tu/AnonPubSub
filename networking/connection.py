@@ -105,7 +105,7 @@ class Connection(object):
         self.reconnect_thread = None
         self.reconnect_try = reconnect_try
         
-        self.logger.info("Initializing new connection with: %s (connect #%s)" % (str(addr), str(self.reconnect_try)))
+        self.logger.info("Initializing new connection with: %s (connect #%s)" % (str(self.addr), str(self.reconnect_try)))
         if self.active_init:
             self._send_init_msg("SYN")
         
@@ -150,7 +150,7 @@ class Connection(object):
         return str(self.peer_id)
     
     def __str__(self):
-        return "Connection<%s@%s[%s]>" % (str(self.peer_id), str(self.addr), str(self.instance_id))
+        return "Connection<%s@%s%s>" % (str(self.peer_id), str(self.instance_id), str(self.addr))
     
     def _send_init_msg(self, flag):
         self.logger.debug("sending init message '%s' from state '%s'..." % (str(flag), str(self.connection_state)))
@@ -188,6 +188,7 @@ class Connection(object):
         })
         self.pinger_thread = Thread(name="local::"+Connection.node_id+"::_pinger", target=self._pinger)
         self.pinger_thread.start()
+        self.logger.info("Connection with: %s initialized" % str(self.addr))
     
     # process incoming raw packet data
     def _incoming(self, packet):
