@@ -23,8 +23,8 @@ from .message import Message
 
 
 MAX_COVERT_PAYLOAD = 1200   # + always 94 bytes overhead for ping added to final packet
-PING_INTERVAL = 1.0
-MAX_MISSING_PINGS = 4       # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
+PING_INTERVAL = 0.25
+MAX_MISSING_PINGS = 16      # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
 MAX_RECONNECTS = 3          # maximum consecutive reconnects after a connection failed
 ENCRYPT_PACKETS = True
 
