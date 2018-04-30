@@ -7,8 +7,11 @@ from threading import Thread, Event, RLock, Condition
 import logging
 logger = logging.getLogger(__name__)
 
-from networking import Connection, Message
+#from networking import Connection, Message
 
+
+OUTGOING_TIME = 1.0
+TIMING_FACTOR = 3.0
 
 class Router(object):
     stopped = Event()
@@ -19,20 +22,19 @@ class Router(object):
         self.node_id = node_id
         self.connections = {}
         self.subscriptions = {}
+        self.last_outgoing_time = {}
         self.timers = SortedList(key=itemgetter('timeout'))
         self.timers_condition = Condition()
-        self.routing_thread = Thread(name="local::"+self.node_id+"::_routing", target=self._routing)
-        self.routing_thread.start()
         self.timers_thread = Thread(name="local::"+self.node_id+"::_timers", target=self._timers)
         self.timers_thread.start()
+        self.routing_thread = Thread(name="local::"+self.node_id+"::_routing", target=self._routing)
+        self.routing_thread.start()
     
     def stop(self):
-        for peer_id, con in self.connections.items():
-            con.terminate()
-        Router.stopped.set()
+        Router.stopped.set()    # this will stop the _routing thread which terminates all connections (no lock on self.connections needed)
+        self.queue.put({})      #empty put to wake up _routing thread after Router.stopped is set to True
         with self.timers_condition:
-            self.timers_condition.notify()  # stop wait in timers thread
-        self.queue.put({})      #empty put to wake up routing thread after Router.stopped is set to True
+            self.timers_condition.notify()  # stop wait in _timers thread
         self.routing_thread.join()
         self.timers_thread.join()
     
@@ -52,13 +54,36 @@ class Router(object):
             "callback": callback
         })
     
-    # internal methods
+    # *** internal methods for child classes ***
+    # _send_msg() and _send_covert_msg() are used by child classes for rate limited sending of messages (for routing demonstrating purposes)
+    def _send_msg(self, msg, con):
+        self.__outgoing("normal", msg, con)
+    
+    def _send_covert_msg(self, msg, con):
+        self.__outgoing("covert", msg, con)
+    
+    def _add_timer(self, timeout, command):
+        timeout *= TIMING_FACTOR    # delay timer for demonstrating purposes
+        timer_id = str(uuid.uuid4())
+        with self.timers_condition:
+            self.timers.add({"timeout": datetime.now().timestamp() + timeout, "id": timer_id, "command": command})
+            self.timers_condition.notify()      # notify timers thread of changes
+        return timer_id
+    
+    def _abort_timer(self, timer_id):
+        with self.timers_condition:
+            # filter out this timer id
+            self.timers = SortedList(iterable=[entry for entry in self.timers if entry["id"] != timer_id], key=itemgetter('timeout'))
+            self.timers_condition.notify()      # notify timers thread of changes
+    
+    # *** routing methods that should be overwritten by child classes ***
     def _route_data(self, msg, incoming_connection=None):
         pass
     
     def _route_covert_data(self, msg, incoming_connection=None):
         pass
     
+    # *** command methods that can be overwritten or used as is by child classes ***
     def _add_connection_command(self, command):
         con = command["connection"]
         peer = con.get_peer_id()
@@ -67,7 +92,10 @@ class Router(object):
     def _remove_connection_command(self, command):
         con = command["connection"]
         peer = con.get_peer_id()
-        del self.connections[peer]
+        if peer in self.connections:
+            del self.connections[peer]
+        if peer in self.last_outgoing_time:
+            del self.last_outgoing_time[peer]
     
     def _message_received_command(self, command):
         if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
@@ -85,21 +113,40 @@ class Router(object):
     def _publish_command(self, command):
         pass    # this command has no common implementation that could be used by child classes
     
-    def _add_timer(self, timeout, command):
-        timer_id = str(uuid.uuid4())
+    # *** internal methods, DON'T touch from child classes ***
+    def __outgoing(self, msg_type, msg, con):
+        # no locking required in this method since we are only called from _routing thread
+        
+        # use "Router__real_send" as reference to our __real_send_command() because of name mangling semantics of double underscore
+        # (those methods cannot accidentally be overwritten from child)
+        command = {"command": "Router__real_send", "type": msg_type, "message": msg, "connection": con}
+        
+        # calculate next send time and update timestamps
+        peer = con.get_peer_id()
+        if peer not in self.last_outgoing_time:
+            self.last_outgoing_time[peer] = {"normal": 0.0, "covert": 0.0}
+        timestamp = self.last_outgoing_time[peer][msg_type] + OUTGOING_TIME     # timestamp in the past means "send immediately"
+        self.last_outgoing_time[peer][msg_type] = datetime.now().timestamp()    # update last outgoing timestamp
+        
+        # add send timer (don't use _add_timer() directly because this method multiplies the timeout with TIMING_FACTOR, see the comments there)
         with self.timers_condition:
-            self.timers.add({"timeout": datetime.now().timestamp() + timeout, "id": timer_id, "command": command})
-            self.timers_condition.notify()      # notify timers thread of changes
-        return timer_id
-    
-    def _abort_timer(self, timer_id):
-        with self.timers_condition:
-            # filter out this timer id
-            self.timers = SortedList(iterable=[entry for entry in self.timers if entry["id"] != timer_id], key=itemgetter('timeout'))
+            self.timers.add({"timeout": timestamp, "id": str(uuid.uuid4()), "command": command})
             self.timers_condition.notify()      # notify timers thread of changes
     
+    def __real_send_command(self, command):
+        try:
+            if command["type"] == "normal":
+                command["connection"].send_msg(command["message"])
+            elif command["type"] == "covert":
+                command["connection"].send_covert_msg(command["message"])
+            else:
+                raise ValueError("Message type '%s' unknown!" % command["type"])
+        except Exception as e:
+            logger.warning("Failed to really send covert message to peer %s: %s" % (str(command["connection"].get_peer_id()), str(e)))
+    
+    # *** internal threads ***
     def _timers(self):
-        logger.debug("timer thread started...");
+        logger.debug("timers thread started...");
         while not Router.stopped.isSet():
             # wait for nex timer or for 8 seconds if no timer is currently present
             with self.timers_condition:
@@ -125,7 +172,7 @@ class Router(object):
                         break       # we are sorted, so stop here
                 # clean up fired timers afterwards (that can be less than are expired by NOW!)
                 self.timers = SortedList(iterable=[entry for entry in self.timers if entry["id"] not in expired], key=itemgetter('timeout'))
-        logger.debug("timer thread stopped...")
+        logger.debug("timers thread stopped...")
     
     def _routing(self):
         logger.debug("routing thread started...");
@@ -135,14 +182,16 @@ class Router(object):
                 if Router.stopped.isSet():      # don't process anything here if we are stopped
                     break
             except Empty as err:
-                logger.debug("routing queue empty");
+                logger.debug("routing queue empty")
                 continue
             logger.debug("got routing command: %s" % command["command"])
-            func = "_"+command["command"]+"_command"        # this is the method name we have to call on self to process the command
+            func = "_%s_command" % command["command"]       # this is the method name we have to call on self to process the command
             if hasattr(self, func):
                 getattr(self, func)(command)
             else:
-                logger.error("Unknown routing command '%s', ignoring command!" % command["command"])
+                logger.error("Unknown routing command '%s' (%s), ignoring command!" % (command["command"], func))
             self.queue.task_done()
+        logger.debug("routing thread got stop signal, terminating all connections...")
+        for peer_id, con in self.connections.items():
+            con.terminate()
         logger.debug("routing thread stopped...")
-    

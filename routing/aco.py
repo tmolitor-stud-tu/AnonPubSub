@@ -12,10 +12,8 @@ from networking import Connection, Message
 from .base import Router
 
 
-# taken from paper:
+# some constants
 ANT_COUNT = 5
-
-#NOT taken from paper:
 EVAPORATION_TIME = 5
 EVAPORATION_FACTOR = 0.75
 DEFAULT_ROUNDS = 150
@@ -85,7 +83,7 @@ class ACO(Router):
             con = self._pheromone_choice(searching_ant["channel"], connections, searching_ant["strictness"])
             if con:
                 logger.debug("Sending out searching ant: %s to %s..." % (str(searching_ant), str(con)))
-                con.send_covert_msg(searching_ant)
+                self._send_covert_msg(searching_ant, con)
             else:
                 logger.debug("Cannot route searching ant, killing ant %s!" % str(searching_ant))
         
@@ -117,7 +115,7 @@ class ACO(Router):
                 return
             
             # NOTE: not needed because pheromones are directed
-            ##update pheromones on edge to next_node, serialize pheromones write access through command queue
+            ## update pheromones on edge to next_node, serialize pheromones write access through command queue
             #self.queue.put({
             #    "command": "ACO_update_pheromones",
             #    "channel": ant["channel"],
@@ -129,7 +127,7 @@ class ACO(Router):
                 logger.info("Activating edge to %s for channel '%s'..." % (str(self.connections[next_node]), str(ant["channel"])))
                 self.active_edges[ant["channel"]][next_node] = True
             logger.debug("Sending out returning ant: %s to %s..." % (str(ant), str(self.connections[next_node])))
-            self.connections[next_node].send_covert_msg(ant)
+            self._send_covert_msg(ant, self.connections[next_node])
     
     def _route_data(self, msg, incoming_connection=None):
         logger.info("Routing data: %s coming from %s..." % (str(msg), str(incoming_connection)))
@@ -156,7 +154,7 @@ class ACO(Router):
         
         for con in connections:
             logger.info("Routing data to %s..." % str(con))
-            con.send_msg(msg)
+            self._send_msg(msg, con)
     
     def _init_channel(self, channel):
         if not channel in self.pheromones:
@@ -187,7 +185,7 @@ class ACO(Router):
         self.queue.put({
             "command": "ACO_create_overlay",
             "channel": command["channel"],
-            "round_count": 0,
+            "round_count": 1,   # don't start at zero because 0 % x == 0 which means activation ants get send out in the very first round
             "retry": 0
         })
     
@@ -255,12 +253,12 @@ class ACO(Router):
                 "pheromones": 1.0,
                 "returning": False,
                 # try to activate paths every ACTIVATION_ROUNDS rounds
-                "activation": (command["round_count"] + 1) % ACTIVATION_ROUNDS == 0
+                "activation": command["round_count"] % ACTIVATION_ROUNDS == 0
             })
             con = self._pheromone_choice(ant["channel"], self.connections, ant["strictness"])
             if con:
                 logger.info("Channel '%s': Round %d: Sending out new searching ant %s to %s..." % (ant["channel"], command["round_count"], str(ant), str(con)))
-                con.send_covert_msg(ant)
+                self._send_covert_msg(ant, con)
             else:
                 logger.warning("Channel '%s': Round %d: Cannot send out new searching ant %s, killing ant!" % (ant["channel"], command["round_count"], str(ant)))
         
@@ -285,6 +283,6 @@ class ACO(Router):
                 self._add_timer(min(MAX_RETRY_TIME, RETRY_TIME * (2**command["retry"])), {
                     "command": "ACO_create_overlay",
                     "channel": command["channel"],
-                    "round_count": 0,
+                    "round_count": 1,   # don't start at zero because 0 % x == 0 which means activation ants get send out in the very first round
                     "retry": command["retry"] + 1
                 })

@@ -1,5 +1,6 @@
 import os
-import codecs
+import base64
+import binascii
 import struct
 from collections import deque
 from threading import Thread, Event, RLock, current_thread, Timer
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)    #default logger
 
 # own classes
 from .message import Message
+from filter import *
 
 
 MAX_COVERT_PAYLOAD = 1200   # + always 94 bytes overhead for ping added to final packet
@@ -38,21 +40,25 @@ class Connection(object):
     len_size = len(struct.pack("!Q", 0))	# calculate length of packed unsigned long long int
     
     # public static method to initialize networking
+    @staticmethod
     def init(node_id, queue, host):
         Connection.node_id = node_id
         Connection.router_queue = queue
         Connection.listener = Listener(node_id, host)
     
     # public static factory method for new outgoing instances
+    @staticmethod
     def connect_to(host, reconnect_try=0):
         return Connection._new((host, 9999), True, reconnect_try)
     
     # internal static factory method for incoming packets used by listener class
+    @staticmethod
     def _incoming_data(addr, data):
         con = Connection._new(addr, False, 0)
         con._incoming(data)
     
-    # internal factory method doing the actual work
+    # internal static factory method doing the actual work
+    @staticmethod
     def _new(addr, active_init, reconnect_try):
         if not Connection.listener:
             raise ValueError("Network not initialized, call Connection.init() first!")
@@ -64,7 +70,8 @@ class Connection(object):
             con.active_init = active_init   # force right value (used on reconnect)
         return con
     
-    # static method to terminate all connections
+    # public static method to terminate all connections
+    @staticmethod
     def shutdown():
         # stop listener
         Connection.listener.stop()
@@ -84,7 +91,7 @@ class Connection(object):
     # class constructor
     def __init__(self, addr, active_init, reconnect_try):
         self.addr = addr
-        self.instance_id = str(codecs.encode(os.urandom(2), "hex"), 'ascii')
+        self.instance_id = str(binascii.hexlify(os.urandom(2)), 'ascii')
         self.logger=configure_logger(self.addr, self.instance_id)
         self.is_dead = Event()
         self.X25519_key = X25519PrivateKey.generate()
@@ -138,7 +145,7 @@ class Connection(object):
     def send_covert_msg(self, msg):
         if self.is_dead.is_set():
             raise BrokenPipeError("Connection already closed!")
-        self.covert_msg_queue.append(str(codecs.encode(self._pack(msg), "hex"), 'ascii'))
+        self.covert_msg_queue.append(str(base64.b64encode(bytes(self._pack(msg))), 'UTF-8'))
     
     def get_peer_id(self):
         #return str(self.addr)
@@ -147,6 +154,7 @@ class Connection(object):
     def __str__(self):
         return "Connection<%s@%s%s>" % (str(self.peer_id), str(self.instance_id), str(self.addr))
     
+    # *** internal methods for connection initialisation ***
     def _send_init_msg(self, flag):
         self.logger.debug("sending init message '%s' from state '%s'..." % (str(flag), str(self.connection_state)))
         data = bytearray(flag, 'ascii')
@@ -185,7 +193,8 @@ class Connection(object):
         self.pinger_thread.start()
         self.logger.info("Connection with %s initialized" % str(self.addr))
     
-    # process incoming raw packet data
+    # *** middle level stuff ***
+    # this is called by our listener for every incoming raw udp packet
     def _incoming(self, packet):
         self.logger.debug("incoming packet(%s): %s" % (str(len(packet)), str(packet)))
         if not self.connection_state == "ESTABLISHED":  # init phase (unencrypted)
@@ -216,11 +225,21 @@ class Connection(object):
                     with self.watchdog_lock:
                         self.watchdog_counter = MAX_MISSING_PINGS
                     # process covert messages
-                    for covert_msg in self._unpack(codecs.decode(msg["covert_messages"], "hex"), False):
+                    for covert_msg in self._unpack(base64.b64decode(bytes(msg["covert_messages"], "UTF-8")), False):
                         Connection.router_queue.put({"command": "covert_message_received", "connection": self, "message": covert_msg})
                 else:
                     Connection.router_queue.put({"command": "message_received", "connection": self, "message": msg})
     
+    def _reconnect(self):
+        # try to reconnect after (PING_INTERVAL * MAX_MISSING_PINGS) + random(0, 2) seconds
+        reconnect = (PING_INTERVAL * MAX_MISSING_PINGS) + (float(int.from_bytes(os.urandom(2), byteorder='big', signed=False))/32768.0)
+        self.logger.info("Reconnecting in %.3f seconds..." % reconnect)
+        if not Connection.reconnections_stopped.wait(reconnect):
+            Connection.connect_to(self.addr[0], self.reconnect_try+1)
+        else:
+            self.logger.info("Reconnection cancelled...")
+    
+    # *** internal threads ***
     def _watchdog(self):
         while not self.is_dead.wait(PING_INTERVAL):
             with self.watchdog_lock:
@@ -238,15 +257,6 @@ class Connection(object):
                 else:
                     self.logger.info("Not active_init or maximum reconnects of %s reached, not trying to reconnect..." % str(MAX_RECONNECTS))
     
-    def _reconnect(self):
-        # try to reconnect after (PING_INTERVAL * MAX_MISSING_PINGS) + random(0, 2) seconds
-        reconnect = (PING_INTERVAL * MAX_MISSING_PINGS) + (float(int.from_bytes(os.urandom(2), byteorder='big', signed=False))/32768.0)
-        self.logger.info("Reconnecting in %.3f seconds..." % reconnect)
-        if not Connection.reconnections_stopped.wait(reconnect):
-            Connection.connect_to(self.addr[0], self.reconnect_try+1)
-        else:
-            self.logger.info("Reconnection cancelled...")
-    
     # the pinger utilizes our covert channel filled with messages from covert_msg_queue
     def _pinger(self):
         while not self.is_dead.wait(PING_INTERVAL):
@@ -256,11 +266,12 @@ class Connection(object):
                 serialized = self.covert_msg_queue.popleft()
                 data += serialized
                 bytes_left -= len(serialized)
-            try:
-                self.send_msg(Message("ping", {"covert_messages": data, "padding": "".ljust(bytes_left, " ")}))
-            except:
-                pass        # ignore errors here (normally only occuring during shutdown)
+            msg = Message("ping", {"covert_messages": data, "padding": str().ljust(bytes_left, " ")})
+            data = self._encrypt(self._pack(msg))
+            if not self.is_dead.is_set():
+                Connection.listener.get_socket().sendto(data, self.addr)
     
+    # *** low level stuff (handling raw bytes data) ***
     def _encrypt(self, packet):
         if not ENCRYPT_PACKETS:
             return packet
