@@ -8,6 +8,7 @@ from threading import Event
 import logging
 logger = logging.getLogger(__name__)
 
+# own classes
 from networking import Connection, Message
 from .base import Router
 
@@ -52,15 +53,15 @@ class ACO(Router):
         
         # normalize weights
         logger.debug("population: %s" % str(population))
-        print("weights: %s" % str(weights))
+        logger.debug("weights: %s" % str(weights))
         weights_sum = math.fsum(weights)
         if weights_sum > 0.0:
             weights = [(float(i)/weights_sum)/2.0 for i in weights]   # normalize to 0.5
         else:
             weights = [0.5/len(weights) for _ in weights]           # dummy values (normalized to 0.5)
-        print("weights normalized to 0.5: %s" % str(weights))
+        logger.debug("weights normalized to 0.5: %s" % str(weights))
         weights = [float(i)+(0.5/len(weights)) for i in weights]    # add 0.5/len(weights) (weights should now sum up to 1.0)
-        print("weights ready: %s" % str(weights))
+        logger.debug("weights ready: %s" % str(weights))
         
         return numpy.random.choice(list(population.values()), p=weights, size=1)[0]
     

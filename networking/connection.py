@@ -15,16 +15,16 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 #logging
 import logging
 def configure_logger(addr=None, instance_id=None):
-    logger = logging.getLogger("%s[%s]@%s:%s" % (__name__, str(instance_id), str(addr[0]), str(addr[1])))
+    logger = logging.getLogger("%s(%s)@%s:%s" % (__name__, str(instance_id), str(addr[0]), str(addr[1])))
     return logger
 logger = logging.getLogger(__name__)    #default logger
 
 # own classes
 from .message import Message
-from filter import *
+import filters
 
 
-MAX_COVERT_PAYLOAD = 1200   # + always 94 bytes overhead for ping added to final packet
+MAX_COVERT_PAYLOAD = 1200   # always + 94 bytes overhead for ping added to final encrypted packet (+ 58 bytes for unencrypted packets)
 PING_INTERVAL = 0.25
 MAX_MISSING_PINGS = 16      # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
 MAX_RECONNECTS = 3          # maximum consecutive reconnects after a connection failed
@@ -220,14 +220,16 @@ class Connection(object):
         else:   # working phase (encrypted)
             messages = self._unpack(packet)
             for msg in messages:
-                if msg.get_type() == "ping":
+                if msg.get_type() == "_ping":
                     # update ping watchdog
                     with self.watchdog_lock:
                         self.watchdog_counter = MAX_MISSING_PINGS
                     # process covert messages
                     for covert_msg in self._unpack(base64.b64decode(bytes(msg["covert_messages"], "UTF-8")), False):
+                        filters.covert_msg_incoming(covert_msg, self)   # call filters framework
                         Connection.router_queue.put({"command": "covert_message_received", "connection": self, "message": covert_msg})
                 else:
+                    filters.msg_incoming(msg, self)     # call filters framework
                     Connection.router_queue.put({"command": "message_received", "connection": self, "message": msg})
     
     def _reconnect(self):
@@ -266,7 +268,7 @@ class Connection(object):
                 serialized = self.covert_msg_queue.popleft()
                 data += serialized
                 bytes_left -= len(serialized)
-            msg = Message("ping", {"covert_messages": data, "padding": str().ljust(bytes_left, " ")})
+            msg = Message("_ping", {"covert_messages": data, "padding": str().ljust(bytes_left, " ")})
             data = self._encrypt(self._pack(msg))
             if not self.is_dead.is_set():
                 Connection.listener.get_socket().sendto(data, self.addr)

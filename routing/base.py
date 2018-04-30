@@ -7,7 +7,8 @@ from threading import Thread, Event, RLock, Condition
 import logging
 logger = logging.getLogger(__name__)
 
-#from networking import Connection, Message
+# own classes
+import filters
 
 
 OUTGOING_TIME = 1.0
@@ -57,9 +58,11 @@ class Router(object):
     # *** internal methods for child classes ***
     # _send_msg() and _send_covert_msg() are used by child classes for rate limited sending of messages (for routing demonstrating purposes)
     def _send_msg(self, msg, con):
+        filters.msg_outgoing(msg, con)      # call filters framework
         self.__outgoing("normal", msg, con)
     
     def _send_covert_msg(self, msg, con):
+        filters.covert_msg_outgoing(msg, con)       # call filters framework
         self.__outgoing("covert", msg, con)
     
     def _add_timer(self, timeout, command):
@@ -124,9 +127,10 @@ class Router(object):
         # calculate next send time and update timestamps
         peer = con.get_peer_id()
         if peer not in self.last_outgoing_time:
-            self.last_outgoing_time[peer] = {"normal": 0.0, "covert": 0.0}
-        timestamp = self.last_outgoing_time[peer][msg_type] + OUTGOING_TIME     # timestamp in the past means "send immediately"
-        self.last_outgoing_time[peer][msg_type] = datetime.now().timestamp()    # update last outgoing timestamp
+            self.last_outgoing_time[peer] = {"normal": datetime.now().timestamp(), "covert": datetime.now().timestamp()}
+        # always wait a minimum of OUTGOING_TIME seconds every message
+        timestamp = max(self.last_outgoing_time[peer][msg_type] + OUTGOING_TIME, datetime.now().timestamp() + OUTGOING_TIME)
+        self.last_outgoing_time[peer][msg_type] = timestamp     # update last outgoing timestamp
         
         # add send timer (don't use _add_timer() directly because this method multiplies the timeout with TIMING_FACTOR, see the comments there)
         with self.timers_condition:
