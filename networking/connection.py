@@ -145,7 +145,7 @@ class Connection(object):
     def send_covert_msg(self, msg):
         if self.is_dead.is_set():
             raise BrokenPipeError("Connection already closed!")
-        self.covert_msg_queue.append(str(base64.b64encode(bytes(self._pack(msg))), 'UTF-8'))
+        self.covert_msg_queue.append(str(base64.b64encode(bytes(self._pack(msg))), 'ascii'))
     
     def get_peer_id(self):
         #return str(self.addr)
@@ -225,7 +225,7 @@ class Connection(object):
                     with self.watchdog_lock:
                         self.watchdog_counter = MAX_MISSING_PINGS
                     # process covert messages
-                    for covert_msg in self._unpack(base64.b64decode(bytes(msg["covert_messages"], "UTF-8")), False):
+                    for covert_msg in self._unpack(base64.b64decode(bytes(msg["covert_messages"], "ascii")), False):
                         filters.covert_msg_incoming(covert_msg, self)   # call filters framework
                         Connection.router_queue.put({"command": "covert_message_received", "connection": self, "message": covert_msg})
                 else:

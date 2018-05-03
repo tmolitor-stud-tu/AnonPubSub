@@ -2,14 +2,11 @@ import uuid
 import math
 import random
 import numpy
-from queue import Queue
-from threading import Thread
-from threading import Event
 import logging
 logger = logging.getLogger(__name__)
 
 # own classes
-from networking import Connection, Message
+from networking import Message
 from .base import Router
 
 
@@ -32,7 +29,7 @@ class ACO(Router):
         self.active_edges = {}
         self.publishing = set()
         self._add_timer(EVAPORATION_TIME, {"command": "ACO_evaporation"})
-        logger.info("%s Router initialized..." % self.__class__.__name__)
+        logger.info("%s router initialized..." % self.__class__.__name__)
     
     def stop(self):
         logger.warning("Stopping router!")
@@ -47,7 +44,7 @@ class ACO(Router):
         weights = []
         for node_id in population:
             if node_id in self.pheromones[channel]:
-                weights.append(math.fsum(self.pheromones[channel][node_id].values()) * strictness)
+                weights.append(self.pheromones[channel][node_id] * strictness)
             else:
                 weights.append(0.0)
         
@@ -65,7 +62,7 @@ class ACO(Router):
         
         return numpy.random.choice(list(population.values()), p=weights, size=1)[0]
     
-    def _route_ant(self, ant, incoming_connection):
+    def _route_covert_data(self, ant, incoming_connection):
         logger.debug("Routing ant: %s coming from %s..." % (str(ant), str(incoming_connection)))
         self._init_channel(ant["channel"])
         
@@ -98,10 +95,9 @@ class ACO(Router):
         if ant["returning"]:
             # update pheromones on edge to incoming node, serialize pheromones write access through command queue
             if ant["channel"] not in self.publishing and incoming_connection:   #ant didn't start its way here --> put pheromones on incoming edge
-                self.queue.put({
+                self._ACO_update_pheromones_command({
                     "command": "ACO_update_pheromones",
                     "channel": ant["channel"],
-                    "subscriber": ant["subscriber"],
                     "node": incoming_connection.get_peer_id(),
                     "pheromones": ant["pheromones"]
                 })
@@ -117,14 +113,13 @@ class ACO(Router):
             
             # NOTE: not needed because pheromones are directed
             ## update pheromones on edge to next_node, serialize pheromones write access through command queue
-            #self.queue.put({
+            #self._ACO_update_pheromones_command({
             #    "command": "ACO_update_pheromones",
             #    "channel": ant["channel"],
-            #    "subscriber": ant["subscriber"],
             #    "node": next_node,
             #    "pheromones": ant["pheromones"]
             #})
-            if ant["activation"] and next_node not in self.active_edges[ant["channel"]]:
+            if ant["activating"] and next_node not in self.active_edges[ant["channel"]]:
                 logger.info("Activating edge to %s for channel '%s'..." % (str(self.connections[next_node]), str(ant["channel"])))
                 self.active_edges[ant["channel"]][next_node] = True
             logger.debug("Sending out returning ant: %s to %s..." % (str(ant), str(self.connections[next_node])))
@@ -183,10 +178,10 @@ class ACO(Router):
         self._init_channel(command["channel"])
         
         logger.info("Creating overlay for channel '%s'..." % command["channel"])
-        self.queue.put({
+        self._ACO_create_overlay_command({
             "command": "ACO_create_overlay",
             "channel": command["channel"],
-            "round_count": 1,   # don't start at zero because 0 % x == 0 which means activation ants get send out in the very first round
+            "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
             "retry": 0
         })
     
@@ -200,40 +195,20 @@ class ACO(Router):
         })
         self._route_data(msg)
     
-    def _covert_message_received_command(self, command):
-        # no need to call parent class here, doing everything on our own
-        con = command["connection"]
-        msg = command["message"]
-        msg_type = msg.get_type()
-        if msg_type == "%s_ant" % self.__class__.__name__:
-            self._route_ant(msg, con)
-    
-    def _message_received_command(self, command):
-        # no need to call parent class here, doing everything on our own
-        con = command["connection"]
-        msg = command["message"]
-        msg_type = msg.get_type()
-        if msg_type == "%s_data" % self.__class__.__name__:
-            self._route_data(msg, con)
-    
     # *** the following commands are internal to ACO ***
     def _ACO_update_pheromones_command(self, command):
         if command["channel"] not in self.pheromones:
             logger.error("Unknown channel '%s' while updating pheromones, skipping update!" % command["channel"])
         else:
             if command["node"] not in self.pheromones[command["channel"]]:
-                self.pheromones[command["channel"]][command["node"]] = {}
-            pheromones_on_edge = self.pheromones[command["channel"]][command["node"]]
-            if command["subscriber"] not in pheromones_on_edge:
-                pheromones_on_edge[command["subscriber"]] = 0.0
-            pheromones_on_edge[command["subscriber"]] += command["pheromones"]
+                self.pheromones[command["channel"]][command["node"]] = 0.0
+            self.pheromones[command["channel"]][command["node"]] += command["pheromones"]
             logger.info("Pheromones updated: %s" % str(self.pheromones))
     
     def _ACO_evaporation_command(self, command):
         for channel in self.pheromones:
             for node_id in self.pheromones[channel]:
-                for subscriber in list(self.pheromones[channel][node_id].keys()):
-                    self.pheromones[channel][node_id][subscriber] *= EVAPORATION_FACTOR
+                self.pheromones[channel][node_id] *= EVAPORATION_FACTOR
         logger.info("Pheromones evaporated: %s" % str(self.pheromones))
         self._add_timer(EVAPORATION_TIME, {"command": "ACO_evaporation"})   # call this command again in EVAPORATION_TIME seconds
     
@@ -247,14 +222,13 @@ class ACO(Router):
             ant = Message("%s_ant" % self.__class__.__name__, {
                 "id": ant_id,
                 "channel": command["channel"],
-                "subscriber": self.node_id,
                 "ttl": ttl,
                 "strictness": strictness,
                 "path": path,
                 "pheromones": 1.0,
                 "returning": False,
                 # try to activate paths every ACTIVATION_ROUNDS rounds
-                "activation": command["round_count"] % ACTIVATION_ROUNDS == 0
+                "activating": command["round_count"] % ACTIVATION_ROUNDS == 0
             })
             con = self._pheromone_choice(ant["channel"], self.connections, ant["strictness"])
             if con:
@@ -284,6 +258,6 @@ class ACO(Router):
                 self._add_timer(min(MAX_RETRY_TIME, RETRY_TIME * (2**command["retry"])), {
                     "command": "ACO_create_overlay",
                     "channel": command["channel"],
-                    "round_count": 1,   # don't start at zero because 0 % x == 0 which means activation ants get send out in the very first round
+                    "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
                     "retry": command["retry"] + 1
                 })

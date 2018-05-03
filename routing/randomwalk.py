@@ -1,9 +1,9 @@
-from queue import Queue
 import numpy
 import logging
 logger = logging.getLogger(__name__)
 
-from networking import Connection, Message
+# own classes
+from networking import Message
 from .base import Router
 
 
@@ -14,7 +14,7 @@ class Randomwalk(Router):
     
     def __init__(self, node_id, queue):
         super(Randomwalk, self).__init__(node_id, queue)
-        logger.info("%s Router initialized..." % self.__class__.__name__)
+        logger.info("%s router initialized..." % self.__class__.__name__)
     
     def _route_data(self, msg, incoming_connection=None):
         if msg["ttl"] <= 0:
@@ -37,7 +37,7 @@ class Randomwalk(Router):
             size=min(len(connections), INITIAL_WALKERS if not incoming_connection else 1)
         ))
         for node_id in connections:
-            self.connections[node_id].send_msg(msg)
+            self._send_msg(msg, self.connections[node_id])
     
     def _publish_command(self, command):
         msg = Message("%s_data" % self.__class__.__name__, {

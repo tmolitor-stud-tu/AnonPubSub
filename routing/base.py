@@ -17,7 +17,7 @@ TIMING_FACTOR = 3.0
 class Router(object):
     stopped = Event()
     
-    # public interface
+    # *** public interface ***
     def __init__(self, node_id, queue):
         self.queue = queue
         self.node_id = node_id
@@ -33,7 +33,7 @@ class Router(object):
     
     def stop(self):
         Router.stopped.set()    # this will stop the _routing thread which terminates all connections (no lock on self.connections needed)
-        self.queue.put({})      #empty put to wake up _routing thread after Router.stopped is set to True
+        self.queue.put({})      # empty put to wake up _routing thread after Router.stopped is set to True
         with self.timers_condition:
             self.timers_condition.notify()  # stop wait in _timers thread
         self.routing_thread.join()
@@ -80,10 +80,10 @@ class Router(object):
             self.timers_condition.notify()      # notify timers thread of changes
     
     # *** routing methods that should be overwritten by child classes ***
-    def _route_data(self, msg, incoming_connection=None):
+    def _route_covert_data(self, msg, incoming_connection=None):
         pass
     
-    def _route_covert_data(self, msg, incoming_connection=None):
+    def _route_data(self, msg, incoming_connection=None):
         pass
     
     # *** command methods that can be overwritten or used as is by child classes ***
@@ -101,11 +101,11 @@ class Router(object):
             del self.last_outgoing_time[peer]
     
     def _message_received_command(self, command):
-        if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
+        if command["message"].get_type().startswith(self.__class__.__name__):   #ignore messages from other routers
             self._route_data(command["message"], command["connection"])
     
     def _covert_message_received_command(self, command):
-        if command["message"].get_type() == "%s_data" % self.__class__.__name__:      #ignore messages from other routers
+        if command["message"].get_type().startswith(self.__class__.__name__):   #ignore messages from other routers
             self._route_covert_data(command["message"], command["connection"])
     
     def _subscribe_command(self, command):
@@ -128,7 +128,7 @@ class Router(object):
         peer = con.get_peer_id()
         if peer not in self.last_outgoing_time:
             self.last_outgoing_time[peer] = {"normal": datetime.now().timestamp(), "covert": datetime.now().timestamp()}
-        # always wait a minimum of OUTGOING_TIME seconds every message
+        # always wait a minimum of OUTGOING_TIME seconds for every message
         timestamp = max(self.last_outgoing_time[peer][msg_type] + OUTGOING_TIME, datetime.now().timestamp() + OUTGOING_TIME)
         self.last_outgoing_time[peer][msg_type] = timestamp     # update last outgoing timestamp
         
@@ -152,13 +152,13 @@ class Router(object):
     def _timers(self):
         logger.debug("timers thread started...");
         while not Router.stopped.isSet():
-            # wait for nex timer or for 8 seconds if no timer is currently present
+            # wait for nex timer or for 60 seconds if no timer is currently present
             with self.timers_condition:
                 if len(self.timers):
                     logger.debug("next timer event in %s seconds" % str(self.timers[0]["timeout"] - datetime.now().timestamp()))
                     self.timers_condition.wait(self.timers[0]["timeout"] - datetime.now().timestamp())
                 else:
-                    logger.debug("next timer event in %s seconds" % str(60))
+                    #logger.debug("next timer event in %s seconds" % str(60))
                     self.timers_condition.wait(60)   # this gets aborted as soon as a timer is added to the list
             # stop here if the router is stopped
             if Router.stopped.isSet():
