@@ -30,6 +30,7 @@ class ACO(Router):
         # needed to send out error messages when needed and to know if overlay is established
         self.active_edges_incoming = {}
         self.publishing = set()
+        self.overlay_creation_timers = {}
         self._add_timer(EVAPORATION_TIME, {"command": "ACO_evaporation"})
         logger.info("%s router initialized..." % self.__class__.__name__)
     
@@ -81,7 +82,8 @@ class ACO(Router):
             del self.active_edges_incoming[error["channel"]][incoming_node]
             if error["channel"] in self.subscriptions:
                 logger.warning("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(ANT_ROUND_TIME)))
-                self._add_timer(ANT_ROUND_TIME, {
+                self._abort_timer(self.overlay_creation_timers[error["channel"]])
+                self.overlay_creation_timers[error["channel"]] = self._add_timer(ANT_ROUND_TIME, {
                     "command": "ACO_create_overlay",
                     "channel": error["channel"],
                     "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
@@ -296,7 +298,7 @@ class ACO(Router):
             # or even further if we still have no active edges and didn't reach MAX_ROUNDS
             (not len(self.active_edges_incoming[command["channel"]]) and command["round_count"] < MAX_ROUNDS)
         ):
-            self._add_timer(ANT_ROUND_TIME, {
+            self.overlay_creation_timers[command["channel"]] = self._add_timer(ANT_ROUND_TIME, {
                 "command": "ACO_create_overlay",
                 "channel": command["channel"],
                 "round_count": command["round_count"] + 1,
@@ -305,11 +307,12 @@ class ACO(Router):
         else:
             if len(self.active_edges_incoming[command["channel"]]):
                 logger.info("Overlay for channel '%s' created..." % command["channel"])
+                del self.overlay_creation_timers[command["channel"]]
             else:
                 retry_time = min(MAX_RETRY_TIME, RETRY_TIME * (2**command["retry"]))
                 logger.error("Could not create overlay for channel '%s', retrying in %s seconds..." % (command["channel"], str(retry_time)))
                 # wait some time and try again (exponential backoff)
-                self._add_timer(retry_time, {
+                self.overlay_creation_timers[command["channel"]] = self._add_timer(retry_time, {
                     "command": "ACO_create_overlay",
                     "channel": command["channel"],
                     "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round

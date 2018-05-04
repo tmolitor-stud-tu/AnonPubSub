@@ -55,6 +55,10 @@ class Router(object):
             "callback": callback
         })
     
+    def unsubscribe(self, channel):
+        # TODO: das hier fehlt noch!
+        pass
+    
     # *** internal methods for child classes ***
     # _send_msg() and _send_covert_msg() are used by child classes for rate limited sending of messages (for routing demonstrating purposes)
     def _send_msg(self, msg, con):
@@ -100,13 +104,13 @@ class Router(object):
         if peer in self.last_outgoing_time:
             del self.last_outgoing_time[peer]
     
-    def _message_received_command(self, command):
-        if command["message"].get_type().startswith(self.__class__.__name__):   #ignore messages from other routers
-            self._route_data(command["message"], command["connection"])
-    
     def _covert_message_received_command(self, command):
         if command["message"].get_type().startswith(self.__class__.__name__):   #ignore messages from other routers
             self._route_covert_data(command["message"], command["connection"])
+    
+    def _message_received_command(self, command):
+        if command["message"].get_type().startswith(self.__class__.__name__):   #ignore messages from other routers
+            self._route_data(command["message"], command["connection"])
     
     def _subscribe_command(self, command):
         if command["channel"] in self.subscriptions:
