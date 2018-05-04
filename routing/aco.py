@@ -14,9 +14,9 @@ from .base import Router
 ANT_COUNT = 5
 EVAPORATION_TIME = 5
 EVAPORATION_FACTOR = 0.75
-DEFAULT_ROUNDS = 150
-MAX_ROUNDS = 500
-ACTIVATION_ROUNDS = 50
+DEFAULT_ROUNDS = 15
+MAX_ROUNDS = 50
+ACTIVATION_ROUNDS = 5
 ANT_ROUND_TIME = 5
 RETRY_TIME = 60
 MAX_RETRY_TIME = 3600   # upper limit of exponential backoff based on RETRY_TIME)
@@ -27,6 +27,8 @@ class ACO(Router):
         super(ACO, self).__init__(node_id, queue)
         self.pheromones = {}
         self.active_edges = {}
+        # needed to send out error messages when needed and to know if overlay is established
+        self.active_edges_incoming = {}
         self.publishing = set()
         self._add_timer(EVAPORATION_TIME, {"command": "ACO_evaporation"})
         logger.info("%s router initialized..." % self.__class__.__name__)
@@ -62,7 +64,49 @@ class ACO(Router):
         
         return numpy.random.choice(list(population.values()), p=weights, size=1)[0]
     
-    def _route_covert_data(self, ant, incoming_connection):
+    def _route_covert_data(self, msg, incoming_connection=None):
+        if msg.get_type().endswith("_ant"):
+            return self._route_ant(msg, incoming_connection)
+        elif msg.get_type().endswith("_error"):
+            return self._route_error(msg, incoming_connection)
+    
+    def _route_error(self, error, incoming_connection):
+        logger.info("Routing error: %s coming from %s..." % (str(error), str(incoming_connection)))
+        
+        self._init_channel(error["channel"])
+        incoming_node = incoming_connection.get_peer_id() if incoming_connection else None
+        
+        # clean up own active edges accordingly
+        if incoming_node and incoming_node in self.active_edges_incoming[error["channel"]]:
+            del self.active_edges_incoming[error["channel"]][incoming_node]
+            if error["channel"] in self.subscriptions:
+                logger.info("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(ANT_ROUND_TIME)))
+                self._add_timer(ANT_ROUND_TIME, {
+                    "command": "ACO_create_overlay",
+                    "channel": error["channel"],
+                    "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
+                    "retry": 0
+                })
+        
+        # calculate next nodes to route error to
+        connections = []
+        for node_id in self.connections:
+            # ignore incoming connection when searching for active edges
+            if node_id in self.active_edges[error["channel"]] and node_id != incoming_node:
+                connections.append(self.connections[node_id])
+        
+        # route error to these nodes
+        if not len(connections):
+            logger.warning("No peers with active edges found, cannot route error further!")
+            logger.warning("Pheromones: %s" % str(self.pheromones[error["channel"]]))
+            logger.warning("Active edges: %s" % str(self.active_edges[error["channel"]]))
+            return
+        
+        for con in connections:
+            logger.info("Routing error to %s..." % str(con))
+            self._send_msg(error, con)
+    
+    def _route_ant(self, ant, incoming_connection):
         logger.debug("Routing ant: %s coming from %s..." % (str(ant), str(incoming_connection)))
         self._init_channel(ant["channel"])
         
@@ -102,23 +146,21 @@ class ACO(Router):
                     "pheromones": ant["pheromones"]
                 })
             
+            if ant["activating"] and incoming_connection and incoming_connection.get_peer_id() not in self.active_edges_incoming[ant["channel"]]:
+                logger.info("Activation for channel '%s' incoming from %s..." % (str(ant["channel"]), str(incoming_connection)))
+                self.active_edges_incoming[ant["channel"]][incoming_connection.get_peer_id()] = True
+            
             if not len(ant["path"]):
                 logger.debug("Ant returned successfully, killing ant %s!" % str(ant))
                 return                      # ant returned successfully --> kill it
+            
+            # get id of next node to route ant to
             next_node = ant["path"][-1]     # ants return on reverse path
             del ant["path"][-1]
             if next_node not in self.connections:
                 logger.warning("Node %s on reverse ant path NOT in current connection list, killing ant %s!" % (next_node, str(ant)))
                 return
             
-            # NOTE: not needed because pheromones are directed
-            ## update pheromones on edge to next_node, serialize pheromones write access through command queue
-            #self._ACO_update_pheromones_command({
-            #    "command": "ACO_update_pheromones",
-            #    "channel": ant["channel"],
-            #    "node": next_node,
-            #    "pheromones": ant["pheromones"]
-            #})
             if ant["activating"] and next_node not in self.active_edges[ant["channel"]]:
                 logger.info("Activating edge to %s for channel '%s'..." % (str(self.connections[next_node]), str(ant["channel"])))
                 self.active_edges[ant["channel"]][next_node] = True
@@ -155,7 +197,10 @@ class ACO(Router):
     def _init_channel(self, channel):
         if not channel in self.pheromones:
             self.pheromones[channel] = {}
+        if not channel in self.active_edges:
             self.active_edges[channel] = {}
+        if not channel in self.active_edges_incoming:
+            self.active_edges_incoming[channel] = {}
     
     def _remove_connection_command(self, command):
         # call parent class for common tasks
@@ -171,6 +216,13 @@ class ACO(Router):
         for channel in self.active_edges:
             if peer in self.active_edges[channel]:
                 del self.active_edges[channel][peer]
+        
+        # inform affected subscribers of broken path, so they can reestablish the overlay
+        for channel in self.active_edges_incoming:
+            if peer in self.active_edges_incoming[channel]:
+                self._route_covert_data(Message("%s_error" % self.__class__.__name__, {
+                    "channel": channel
+                }), command["connection"])
     
     def _subscribe_command(self, command):
         # call parent class for common tasks
@@ -242,7 +294,7 @@ class ACO(Router):
             # loop as long as we didn't reach DEFAULT_ROUNDS
             command["round_count"] < DEFAULT_ROUNDS or
             # or even further if we still have no active edges and didn't reach MAX_ROUNDS
-            (len(self.active_edges[command["channel"]]) == 0 and command["round_count"] < MAX_ROUNDS)
+            (not len(self.active_edges_incoming[command["channel"]]) and command["round_count"] < MAX_ROUNDS)
         ):
             self._add_timer(ANT_ROUND_TIME, {
                 "command": "ACO_create_overlay",
@@ -251,11 +303,13 @@ class ACO(Router):
                 "retry": command["retry"]
             })
         else:
-            if len(self.active_edges[command["channel"]]):
-                logger.info("Overlay for channel '%s' created..." % channel)
+            if len(self.active_edges_incoming[command["channel"]]):
+                logger.info("Overlay for channel '%s' created..." % command["channel"])
             else:
+                retry_time = min(MAX_RETRY_TIME, RETRY_TIME * (2**command["retry"]))
+                logger.error("Could not create overlay for channel '%s', retrying in %s seconds..." % (command["channel"], str(retry_time)))
                 # wait some time and try again (exponential backoff)
-                self._add_timer(min(MAX_RETRY_TIME, RETRY_TIME * (2**command["retry"])), {
+                self._add_timer(retry_time, {
                     "command": "ACO_create_overlay",
                     "channel": command["channel"],
                     "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
