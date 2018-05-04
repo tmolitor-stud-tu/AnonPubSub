@@ -80,7 +80,7 @@ class ACO(Router):
         if incoming_node and incoming_node in self.active_edges_incoming[error["channel"]]:
             del self.active_edges_incoming[error["channel"]][incoming_node]
             if error["channel"] in self.subscriptions:
-                logger.info("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(ANT_ROUND_TIME)))
+                logger.warning("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(ANT_ROUND_TIME)))
                 self._add_timer(ANT_ROUND_TIME, {
                     "command": "ACO_create_overlay",
                     "channel": error["channel"],
