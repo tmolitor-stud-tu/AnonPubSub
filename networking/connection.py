@@ -138,13 +138,15 @@ class Connection(object):
     
     def send_msg(self, msg):
         if self.is_dead.is_set():
-            raise BrokenPipeError("Connection already closed!")
+            #raise BrokenPipeError("Connection already closed!")
+            return      # ignore send on dead connection (will be "garbage collected" by router command "remove_connection" soon)
         data = self._encrypt(self._pack(msg))
         Connection.listener.get_socket().sendto(data, self.addr)
     
     def send_covert_msg(self, msg):
         if self.is_dead.is_set():
-            raise BrokenPipeError("Connection already closed!")
+            #raise BrokenPipeError("Connection already closed!")
+            return      # ignore send on dead connection (will be "garbage collected" by router command "remove_connection" soon)
         self.covert_msg_queue.append(str(base64.b64encode(bytes(self._pack(msg))), 'ascii'))
     
     def get_peer_id(self):
