@@ -12,7 +12,7 @@ import filters
 
 
 OUTGOING_TIME = 1.0
-TIMING_FACTOR = 3.0
+TIMING_FACTOR = 2.0
 
 class Router(object):
     stopped = Event()
@@ -59,7 +59,7 @@ class Router(object):
         # TODO: das hier fehlt noch!
         pass
     
-    # *** internal methods for child classes ***
+    # *** internal api methods for child classes ***
     # _send_msg() and _send_covert_msg() are used by child classes for rate limited sending of messages (for routing demonstrating purposes)
     def _send_msg(self, msg, con):
         filters.msg_outgoing(msg, con)      # call filters framework
@@ -83,6 +83,13 @@ class Router(object):
             self.timers = SortedList(iterable=[entry for entry in self.timers if entry["id"] != timer_id], key=itemgetter('timeout'))
             self.timers_condition.notify()      # notify timers thread of changes
     
+    def _call_command(self, command):
+        func = "_%s_command" % command["command"]       # this is the method name we have to call on self to process the command
+        if hasattr(self, func):
+            return getattr(self, func)(command)
+        logger.error("Unknown routing command '%s' (%s), ignoring command!" % (command["command"], func))
+        return None
+
     # *** routing methods that should be overwritten by child classes ***
     def _route_covert_data(self, msg, incoming_connection=None):
         pass
@@ -193,11 +200,7 @@ class Router(object):
                 logger.debug("routing queue empty")
                 continue
             logger.debug("got routing command: %s" % command["command"])
-            func = "_%s_command" % command["command"]       # this is the method name we have to call on self to process the command
-            if hasattr(self, func):
-                getattr(self, func)(command)
-            else:
-                logger.error("Unknown routing command '%s' (%s), ignoring command!" % (command["command"], func))
+            self._call_command(command)
             self.queue.task_done()
         logger.debug("routing thread got stop signal, terminating all connections...")
         for peer_id, con in self.connections.items():

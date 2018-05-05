@@ -82,7 +82,8 @@ class ACO(Router):
             del self.active_edges_incoming[error["channel"]][incoming_node]
             if error["channel"] in self.subscriptions:
                 logger.warning("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(ANT_ROUND_TIME)))
-                self._abort_timer(self.overlay_creation_timers[error["channel"]])
+                if error["channel"] in self.overlay_creation_timers:
+                    self._abort_timer(self.overlay_creation_timers[error["channel"]])
                 self.overlay_creation_timers[error["channel"]] = self._add_timer(ANT_ROUND_TIME, {
                     "command": "ACO_create_overlay",
                     "channel": error["channel"],
@@ -106,7 +107,7 @@ class ACO(Router):
         
         for con in connections:
             logger.info("Routing error to %s..." % str(con))
-            self._send_msg(error, con)
+            self._send_covert_msg(error, con)
     
     def _route_ant(self, ant, incoming_connection):
         logger.debug("Routing ant: %s coming from %s..." % (str(ant), str(incoming_connection)))
@@ -141,7 +142,7 @@ class ACO(Router):
         if ant["returning"]:
             # update pheromones on edge to incoming node, serialize pheromones write access through command queue
             if ant["channel"] not in self.publishing and incoming_connection:   #ant didn't start its way here --> put pheromones on incoming edge
-                self._ACO_update_pheromones_command({
+                self._call_command({
                     "command": "ACO_update_pheromones",
                     "channel": ant["channel"],
                     "node": incoming_connection.get_peer_id(),
@@ -232,7 +233,7 @@ class ACO(Router):
         self._init_channel(command["channel"])
         
         logger.info("Creating overlay for channel '%s'..." % command["channel"])
-        self._ACO_create_overlay_command({
+        self._call_command({
             "command": "ACO_create_overlay",
             "channel": command["channel"],
             "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
@@ -307,7 +308,8 @@ class ACO(Router):
         else:
             if len(self.active_edges_incoming[command["channel"]]):
                 logger.info("Overlay for channel '%s' created..." % command["channel"])
-                del self.overlay_creation_timers[command["channel"]]
+                if command["channel"] in self.overlay_creation_timers:
+                    del self.overlay_creation_timers[command["channel"]]
             else:
                 retry_time = min(MAX_RETRY_TIME, RETRY_TIME * (2**command["retry"]))
                 logger.error("Could not create overlay for channel '%s', retrying in %s seconds..." % (command["channel"], str(retry_time)))
