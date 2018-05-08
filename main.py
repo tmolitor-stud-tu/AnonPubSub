@@ -45,9 +45,9 @@ router = None
 def cleanup_and_exit(code=0):
     signal.signal(signal.SIGINT, signal.SIG_IGN)    #ignore SIGINT while shutting down
     logger.warning("Shutting down!")
-    networking.Connection.shutdown()
     if router:
         router.stop()
+    networking.Connection.shutdown()
     sys.exit(code)
 
 #cleanup on sigint (CTRL-C)

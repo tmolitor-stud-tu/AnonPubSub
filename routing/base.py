@@ -39,14 +39,6 @@ class Router(object):
         self.routing_thread.join()
         self.timers_thread.join()
     
-    def publish(self, channel, data):
-        logger.info("Publishing data on channel '%s'..." % str(channel))
-        self.queue.put({
-            "command": "publish",
-            "channel": channel,
-            "data": data
-        })
-    
     def subscribe(self, channel, callback):
         logger.info("Subscribing for data on channel '%s'..." % str(channel))
         self.queue.put({
@@ -56,8 +48,19 @@ class Router(object):
         })
     
     def unsubscribe(self, channel):
-        # TODO: das hier fehlt noch!
-        pass
+        logger.info("Unsubscribing channel '%s'..." % str(channel))
+        self.queue.put({
+            "command": "unsubscribe",
+            "channel": channel,
+        })
+    
+    def publish(self, channel, data):
+        logger.info("Publishing data on channel '%s'..." % str(channel))
+        self.queue.put({
+            "command": "publish",
+            "channel": channel,
+            "data": data
+        })
     
     # *** internal api methods for child classes ***
     # _send_msg() and _send_covert_msg() are used by child classes for rate limited sending of messages (for routing demonstrating purposes)
@@ -66,8 +69,8 @@ class Router(object):
         self.__outgoing("normal", msg, con)
     
     def _send_covert_msg(self, msg, con):
-        filters.covert_msg_outgoing(msg, con)       # call filters framework
-        self.__outgoing("covert", msg, con)
+        if not filters.covert_msg_outgoing(msg, con):       # call filters framework
+            self.__outgoing("covert", msg, con)
     
     def _add_timer(self, timeout, command):
         timeout *= TIMING_FACTOR    # delay timer for demonstrating purposes
@@ -123,6 +126,10 @@ class Router(object):
         if command["channel"] in self.subscriptions:
             return
         self.subscriptions[command["channel"]] = command["callback"]
+    
+    def _unsubscribe_command(self, command):
+        if command["channel"] in self.subscriptions:
+            del self.subscriptions[command["channel"]]
     
     def _publish_command(self, command):
         pass    # this command has no common implementation that could be used by child classes

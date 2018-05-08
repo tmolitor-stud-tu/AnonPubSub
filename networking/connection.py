@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 #logging
 import logging
 def configure_logger(addr=None, instance_id=None):
-    logger = logging.getLogger("%s(%s)@%s:%s" % (__name__, str(instance_id), str(addr[0]), str(addr[1])))
+    logger = logging.getLogger("%s[%s]@%s:%s" % (__name__, str(instance_id), str(addr[0]), str(addr[1])))
     return logger
 logger = logging.getLogger(__name__)    #default logger
 
@@ -228,11 +228,11 @@ class Connection(object):
                         self.watchdog_counter = MAX_MISSING_PINGS
                     # process covert messages
                     for covert_msg in self._unpack(base64.b64decode(bytes(msg["covert_messages"], "ascii")), False):
-                        filters.covert_msg_incoming(covert_msg, self)   # call filters framework
-                        Connection.router_queue.put({"command": "covert_message_received", "connection": self, "message": covert_msg})
+                        if not filters.covert_msg_incoming(covert_msg, self):       # call filters framework
+                            Connection.router_queue.put({"command": "covert_message_received", "connection": self, "message": covert_msg})
                 else:
-                    filters.msg_incoming(msg, self)     # call filters framework
-                    Connection.router_queue.put({"command": "message_received", "connection": self, "message": msg})
+                    if not filters.msg_incoming(msg, self):     # call filters framework
+                        Connection.router_queue.put({"command": "message_received", "connection": self, "message": msg})
     
     def _reconnect(self):
         # try to reconnect after (PING_INTERVAL * MAX_MISSING_PINGS) + random(0, 2) seconds
