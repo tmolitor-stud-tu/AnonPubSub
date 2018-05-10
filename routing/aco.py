@@ -11,6 +11,7 @@ from .base import Router
 
 
 # some constants
+ANONYMOUS_IDS = False
 ANT_COUNT = 5
 EVAPORATION_TIME = 5
 EVAPORATION_FACTOR = 0.75
@@ -18,9 +19,12 @@ DEFAULT_ROUNDS = 15
 MAX_ROUNDS = 50
 ACTIVATION_ROUNDS = 5
 ANT_ROUND_TIME = 5
-ANT_MAINTENANCE_TIME = DEFAULT_ROUNDS * ANT_ROUND_TIME  # maintain overlay every DEFAULT_ROUNDS time
+# maintain overlay every DEFAULT_ROUNDS times or zero, if no maintenance should be done
+#ANT_MAINTENANCE_TIME = DEFAULT_ROUNDS * ANT_ROUND_TIME
+ANT_MAINTENANCE_TIME = 0
 RETRY_TIME = 60
-MAX_RETRY_TIME = 3 * ANT_MAINTENANCE_TIME   # upper limit of exponential backoff based on RETRY_TIME)
+# upper limit of exponential backoff (based on ANT_MAINTENANCE_TIME or a fixed value if no maintenance is used)
+MAX_RETRY_TIME = 3 * ANT_MAINTENANCE_TIME if ANT_MAINTENANCE_TIME else 1800
 
 class ACO(Router):
     
@@ -31,6 +35,8 @@ class ACO(Router):
         # needed to send out error messages when needed and to know if overlay is established
         self.active_edges_to_publishers = {}
         self.publishing = set()
+        self.subscriber_ids = {}
+        self.publisher_ids = {}
         self.overlay_creation_timers = {}
         self.overlay_maintenance_timers = {}
         self._add_timer(EVAPORATION_TIME, {"command": "ACO_evaporation"})
@@ -72,16 +78,48 @@ class ACO(Router):
             return self._route_error(msg, incoming_connection)
         elif msg.get_type().endswith("_unsubscribe"):
             return self._route_unsubscribe(msg, incoming_connection)
+        elif msg.get_type().endswith("_teardown"):
+            return self._route_teardown(msg, incoming_connection)
         elif msg.get_type().endswith("_ant"):
             return self._route_ant(msg, incoming_connection)
+    
+    def _route_teardown(self, teardown, incoming_connection):
+        logger.info("Routing teardown: %s coming from %s..." % (str(teardown), str(incoming_connection)))
+        self._init_channel(teardown["channel"])
+        incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
+        
+        # get peer id of reverse active edge to this publisher for this subscriber and delete edge afterwards
+        node_id = None
+        if teardown["subscriber"] in self.active_edges_to_publishers[teardown["channel"]]:
+            if teardown["publisher"] in self.active_edges_to_publishers[teardown["channel"]][teardown["subscriber"]]:
+                node_id = self.active_edges_to_publishers[teardown["channel"]][teardown["subscriber"]][teardown["publisher"]]
+                del self.active_edges_to_publishers[teardown["channel"]][teardown["subscriber"]][teardown["publisher"]]
+        
+        # only handle teardown if we have a matching active edge
+        # otherwise don't touch our active edge or route the teardown further
+        if incoming_connection and (teardown["subscriber"] not in self.active_edges[teardown["channel"]] or
+        self.active_edges[teardown["channel"]][teardown["subscriber"]] != incoming_peer):
+            return
+        
+        # delete active edge to this subscriber if the teardown didn't originate here AND the reverse active edge
+        # for this subscriber is the only one (or if there is no reverse active edge at all because the reverse path ends here).
+        # if it is NOT the only one, we are a forwarder for another publisher and the active edge is still needed
+        if incoming_connection and teardown["subscriber"] in self.active_edges_to_publishers[teardown["channel"]]:
+            if len(self.active_edges_to_publishers[teardown["channel"]][teardown["subscriber"]]) <= 1:
+                del self.active_edges[teardown["channel"]][teardown["subscriber"]]
+        
+        # route teardown message further along the reverse active edge to this publisher for this subscriber
+        if node_id in self.connections:
+            logger.info("Routing teardown to %s..." % str(self.connections[node_id]))
+            self._send_covert_msg(teardown, self.connections[node_id])
     
     def _route_error(self, error, incoming_connection):
         logger.info("Routing error: %s coming from %s..." % (str(error), str(incoming_connection)))
         self._init_channel(error["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
         
-        # recreate broken overlay if needed (incoming_peer is a reverse active edge)
-        if incoming_peer in self.active_edges_to_publishers[error["channel"]][error["subscriber"]]:
+        # recreate broken overlay if needed (incoming_peer is a reverse active edge and we subscribed the channel)
+        if incoming_peer in set(self.active_edges_to_publishers[error["channel"]][error["subscriber"]].values()):
             if error["channel"] in self.subscriptions:
                 logger.warning("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(ANT_ROUND_TIME)))
                 # abort all overlay creation or maintenance timers and start overlay creation from scratch in ANT_ROUND_TIME seconds
@@ -96,6 +134,7 @@ class ACO(Router):
                     "retry": 0
                 })
         
+        # route error message further along the active edge for this subscriber
         if error["subscriber"] in self.active_edges[error["channel"]]:
             node_id = self.active_edges[error["channel"]][error["subscriber"]]
             if node_id in self.connections:
@@ -107,8 +146,8 @@ class ACO(Router):
         self._init_channel(unsubscribe["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
         
-        # route message along all reverse active edges to all publishers
-        for node_id in self.active_edges_to_publishers[unsubscribe["channel"]][unsubscribe["subscriber"]]:
+        # route unsubscribe message along all reverse active edges to all publishers
+        for node_id in set(self.active_edges_to_publishers[unsubscribe["channel"]][unsubscribe["subscriber"]].values()):
             if node_id in self.connections:
                 logger.info("Routing unsubscribe to %s..." % str(self.connections[node_id]))
                 self._send_covert_msg(error, self.connections[node_id])
@@ -149,6 +188,10 @@ class ACO(Router):
             if ant["channel"] in self.publishing:
                 ant["returning"] = True
                 ant["ttl"] = float("inf")
+                if ant["activating"]:       # activating ants carry the publisher id for which the path is activated
+                    if ant["channel"] not in self.publisher_ids:
+                        self.publisher_ids[ant["channel"]] = str(uuid.uuid4()) if ANONYMOUS_IDS else self.node_id
+                    ant["publisher"] = self.publisher_ids[ant["channel"]]
                 return self._route_covert_data(ant)    # route returning ant (originating here, thats why no incoming_connection is given)
         
         # route returning ants
@@ -164,10 +207,25 @@ class ACO(Router):
             
             if ant["activating"] and incoming_connection:
                 if ant["subscriber"] not in self.active_edges_to_publishers[ant["channel"]]:
-                    self.active_edges_to_publishers[ant["channel"]][ant["subscriber"]] = set()
-                if incoming_peer not in self.active_edges_to_publishers[ant["channel"]][ant["subscriber"]]:
-                    logger.info("Activation for channel '%s' incoming from %s..." % (str(ant["channel"]), str(incoming_connection)))
-                    self.active_edges_to_publishers[ant["channel"]][ant["subscriber"]].add(incoming_peer)
+                    self.active_edges_to_publishers[ant["channel"]][ant["subscriber"]] = {}
+                if ant["publisher"] not in self.active_edges_to_publishers[ant["channel"]][ant["subscriber"]]:
+                    logger.info("Activation for channel '%s' incoming from publisher '%s' via %s..." % (
+                        str(ant["channel"]),
+                        str(ant["publisher"]),
+                        str(incoming_connection)
+                    ))
+                elif incoming_peer != self.active_edges_to_publishers[ant["channel"]][ant["subscriber"]][ant["publisher"]]:
+                    logger.warning("New path activation for channel '%s' incoming from publisher '%s' via %s..." % (
+                        str(ant["channel"]),
+                        str(ant["publisher"]),
+                        str(incoming_connection)
+                    ))
+                    self._route_covert_data(Message("%s_teardown" % self.__class__.__name__, {
+                        "channel": ant["channel"],
+                        "subscriber": ant["subscriber"],
+                        "publisher": ant["publisher"]
+                    }))
+                self.active_edges_to_publishers[ant["channel"]][ant["subscriber"]][ant["publisher"]] = incoming_peer
             
             if not len(ant["path"]):
                 logger.debug("Ant returned successfully, killing ant %s!" % str(ant))
@@ -232,7 +290,7 @@ class ACO(Router):
         # inform affected subscribers of broken path, so they can reestablish the overlay
         for channel in self.active_edges_to_publishers:
             for subscriber in self.active_edges_to_publishers[channel]:
-                if peer in self.active_edges_to_publishers[channel][subscriber]:
+                if peer in set(self.active_edges_to_publishers[channel][subscriber].values()):
                     self._route_covert_data(Message("%s_error" % self.__class__.__name__, {
                         "channel": channel,
                         "subscriber": subscriber
@@ -247,12 +305,18 @@ class ACO(Router):
         # clean up reverse active edges to publishers
         for channel in self.active_edges_to_publishers:
             for subscriber in self.active_edges_to_publishers[channel]:
-                self.active_edges_to_publishers[channel][subscriber].discard(peer)
+                for publisher in list(self.active_edges_to_publishers[channel][subscriber].keys()):
+                    if self.active_edges_to_publishers[channel][subscriber][publisher] == peer:
+                        del self.active_edges_to_publishers[channel][subscriber][publisher]
     
     def _subscribe_command(self, command):
         # call parent class for common tasks
         super(ACO, self)._subscribe_command(command)
         self._init_channel(command["channel"])
+        
+        # create new subscriber id for this channel if needed
+        if command["channel"] not in self.subscriber_ids:
+            self.subscriber_ids[command["channel"]] = str(uuid.uuid4()) if ANONYMOUS_IDS else self.node_id
         
         logger.info("Creating overlay for channel '%s'..." % command["channel"])
         self._call_command({
@@ -269,8 +333,12 @@ class ACO(Router):
         
         self._send_covert_msg(Message("%s_unsubscribe" % self.__class__.__name__, {
             "channel": command["channel"],
-            "subscriber": self.node_id
+            "subscriber": self.subscriber_ids[command["channel"]]
         }))
+        
+        # remove old subscriber id if not needed anymore
+        if command["channel"] not in self.subscriber_ids:
+            del self.subscriber_ids[command["channel"]]
     
     def _publish_command(self, command):
         # no need to call parent class here, doing everything on our own
@@ -312,8 +380,8 @@ class ACO(Router):
             (
                 # ...we still have no active edges...
                 (
-                    self.node_id not in self.active_edges_to_publishers[command["channel"]] or
-                    not len(self.active_edges_to_publishers[command["channel"]][self.node_id])
+                    self.subscriber_ids[command["channel"]] not in self.active_edges_to_publishers[command["channel"]] or
+                    not len(set(self.active_edges_to_publishers[command["channel"]][self.subscriber_ids[command["channel"]]].values()))
                 ) and
                 # ...and didn't reach MAX_ROUNDS (use <= to wait for last activating ants if MAX_ROUNDS % ACTIVATION_ROUNDS == 0)
                 command["round_count"] <= MAX_ROUNDS
@@ -330,19 +398,23 @@ class ACO(Router):
             })
         else:
             if not (
-                    self.node_id not in self.active_edges_to_publishers[command["channel"]] or
-                    not len(self.active_edges_to_publishers[command["channel"]][self.node_id])
+                    self.subscriber_ids[command["channel"]] not in self.active_edges_to_publishers[command["channel"]] or
+                    not len(set(self.active_edges_to_publishers[command["channel"]][self.subscriber_ids[command["channel"]]].values()))
             ):
-                logger.info("Overlay for channel '%s' created (maintenance will now run every %d seconds)..." % (command["channel"], ANT_MAINTENANCE_TIME))
                 if command["channel"] in self.overlay_creation_timers:
                     del self.overlay_creation_timers[command["channel"]]
                 
-                # call maintain overlay command in ANT_MAINTENANCE_TIME seconds
-                self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ANT_MAINTENANCE_TIME, {
-                    "command": "ACO_maintain_overlay",
-                    "channel": command["channel"],
-                    "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
-                })
+                if not ANT_MAINTENANCE_TIME:
+                    logger.info("Overlay for channel '%s' created (maintenance will *NOT* happen after this)..." % command["channel"])
+                else:
+                    # call maintain overlay command in ANT_MAINTENANCE_TIME seconds
+                    logger.info("Overlay for channel '%s' created (maintenance will now run every %d seconds)..." % (command["channel"], ANT_MAINTENANCE_TIME))
+                    self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ANT_MAINTENANCE_TIME, {
+                        "command": "ACO_maintain_overlay",
+                        "channel": command["channel"],
+                        "ttl": DEFAULT_ROUNDS,      # bigger ttl to find new publishers (fixed to this value)
+                        "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
+                    })
             else:
                 retry_time = min(MAX_RETRY_TIME, RETRY_TIME * (2**command["retry"]))
                 logger.error("Could not create overlay for channel '%s', retrying in %s seconds..." % (command["channel"], str(retry_time)))
@@ -360,12 +432,13 @@ class ACO(Router):
             if command["channel"] in self.overlay_creation_timers:
                 return
             
-            self._send_out_ants(command["channel"], command["round_count"])
+            self._send_out_ants(command["channel"], command["round_count"], command["ttl"])
             
             # call us again in ANT_ROUND_TIME seconds
             self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ANT_ROUND_TIME, {
                 "command": "ACO_maintain_overlay",
                 "channel": command["channel"],
+                "ttl": ttl,
                 "round_count": command["round_count"] + 1,
             })
         else:
@@ -374,21 +447,25 @@ class ACO(Router):
             self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ANT_MAINTENANCE_TIME, {
                 "command": "ACO_maintain_overlay",
                 "channel": command["channel"],
+                "ttl": DEFAULT_ROUNDS,      # bigger ttl to find new publishers (fixed to this value)
                 "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
             })
     
-    def _send_out_ants(self, channel, round_count):
+    def _send_out_ants(self, channel, round_count, ttl=6):
+        if channel not in self.subscriber_ids:
+            self.subscriber_ids[channel] = str(uuid.uuid4()) if ANONYMOUS_IDS else self.node_id
         logger.info("Channel '%s': Round %d: Sending out %d new searching ants..." % (channel, round_count, ANT_COUNT))
         # send out ANT_COUNT ants
         for i in range(0, ANT_COUNT):
             ant = Message("%s_ant" % self.__class__.__name__, {
                 "id": str(uuid.uuid4()),
                 "channel": channel,
-                "ttl": max(6, round_count),
+                "ttl": max(ttl, round_count),                   # default minimum ttl is 6
                 "strictness": (random.random() * 20) % 20,      # strictness in [0, 20)
                 "path": [self.node_id],
-                "subscriber": self.node_id,
-                "pheromones": 1.0,
+                "subscriber": self.subscriber_ids[channel],
+                "publisher": None,                              # will be filled by publisher when an activating ant is returned
+                "pheromones": 1.0,                              # pheromones to put on each edge (can be changed per ant here, if needed)
                 "returning": False,
                 # try to activate paths every ACTIVATION_ROUNDS rounds
                 "activating": round_count % ACTIVATION_ROUNDS == 0
