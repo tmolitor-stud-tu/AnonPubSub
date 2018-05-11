@@ -17,7 +17,6 @@ ANT_COUNT = 5
 EVAPORATION_TIME = 5
 EVAPORATION_FACTOR = 0.75
 DEFAULT_ROUNDS = 15
-MAX_ROUNDS = 50
 ACTIVATION_ROUNDS = 5
 ANT_ROUND_TIME = 5
 # maintain overlay every DEFAULT_ROUNDS times or zero, if no maintenance should be done
@@ -449,18 +448,8 @@ class ACO(Router):
         active_edges_present = (self.subscriber_ids[command["channel"]] in self.active_edges_to_publishers[command["channel"]] and
         len(set(itemgetter("peer")(entry) for entry in self.active_edges_to_publishers[command["channel"]][self.subscriber_ids[command["channel"]]].values())))
         
-        # loop as long as we didn't reach DEFAULT_ROUNDS or even further if still no active edges are found
-        if (
-            # loop as long as we didn't reach DEFAULT_ROUNDS (use <= to wait for last activating ants if DEFAULT_ROUNDS % ACTIVATION_ROUNDS == 0)
-            command["round_count"] <= DEFAULT_ROUNDS or
-            # or even further if...
-            (
-                # ...we still have no active edges...
-                not active_edges_present and
-                # ...and didn't reach MAX_ROUNDS (use <= to wait for last activating ants if MAX_ROUNDS % ACTIVATION_ROUNDS == 0)
-                command["round_count"] <= MAX_ROUNDS
-            )
-        ):
+        # loop as long as we didn't reach DEFAULT_ROUNDS (use <= to wait for last activating ants if DEFAULT_ROUNDS % ACTIVATION_ROUNDS == 0)
+        if command["round_count"] <= DEFAULT_ROUNDS:
             self._send_out_ants(command["channel"], command["round_count"])
             
             # call us again in ANT_ROUND_TIME seconds
@@ -471,31 +460,26 @@ class ACO(Router):
                 "retry": command["retry"]
             })
         else:
+            if command["channel"] in self.overlay_creation_timers:
+                del self.overlay_creation_timers[command["channel"]]
             if active_edges_present:
-                if command["channel"] in self.overlay_creation_timers:
-                    del self.overlay_creation_timers[command["channel"]]
-                
-                if not ANT_MAINTENANCE_TIME:
-                    logger.info("Overlay for channel '%s' created (maintenance will *NOT* happen after this)..." % command["channel"])
-                else:
-                    # call maintain overlay command in ANT_MAINTENANCE_TIME seconds
+                if ANT_MAINTENANCE_TIME:
                     logger.info("Overlay for channel '%s' created (maintenance will now run every %d seconds)..." % (command["channel"], ANT_MAINTENANCE_TIME))
-                    self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ANT_MAINTENANCE_TIME, {
-                        "command": "ACO_maintain_overlay",
-                        "channel": command["channel"],
-                        # TODO: do fixed ttl values destroy the ant optimisation
-                        "ttl": DEFAULT_ROUNDS,      # bigger ttl to find new publishers (fixed to this value)
-                        "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
-                    })
+                else:
+                    logger.info("Overlay for channel '%s' created (maintenance will *NOT* happen after this)..." % command["channel"])
             else:
-                retry_time = min(MAX_RETRY_TIME, RETRY_TIME * (2**command["retry"]))
-                logger.error("Could not create overlay for channel '%s', retrying in %s seconds..." % (command["channel"], str(retry_time)))
-                # wait some time and try again (exponential backoff)
-                self.overlay_creation_timers[command["channel"]] = self._add_timer(retry_time, {
-                    "command": "ACO_create_overlay",
+                if ANT_MAINTENANCE_TIME:
+                    logger.info("Could not create overlay for channel '%s' (maintenance will now run every %d seconds)..." % (command["channel"], ANT_MAINTENANCE_TIME))
+                else:
+                    logger.info("Could not create overlay for channel '%s' (maintenance will *NOT* happen after this)..." % command["channel"])
+            if ANT_MAINTENANCE_TIME:
+                # call maintain overlay command in ANT_MAINTENANCE_TIME seconds
+                self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ANT_MAINTENANCE_TIME, {
+                    "command": "ACO_maintain_overlay",
                     "channel": command["channel"],
-                    "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
-                    "retry": command["retry"] + 1
+                    # TODO: do fixed ttl values destroy the ant optimisation
+                    "ttl": DEFAULT_ROUNDS,      # bigger ttl to find new publishers (fixed to this value)
+                    "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
                 })
     
     def _ACO_maintain_overlay_command(self, command):
