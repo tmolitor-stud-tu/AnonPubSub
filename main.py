@@ -95,15 +95,22 @@ for node in bootstrap:
 
 #test system
 time.sleep(6)
+old_data = 0
 def receiver(data):
-    print("DATA RECEIVED: '%s'..." % data)
+    global old_data
+    if data != old_data + 1:
+        logger.error("OUTDATED DATA RECEIVED (%s != %s)!!!" % (str(data), str(old_data + 1)))
+    old_data = data
+    print("DATA RECEIVED: %s" % data)
 if args.subscribe:
     time.sleep(2)
     router.subscribe(args.subscribe, receiver)
 
 #wait for CTRL-C
+data = 0
 while True:
     if args.publish:
-        router.publish(args.publish, "yayy!!");
+        router.publish(args.publish, data);
+        data += 1
     time.sleep(2)
 
