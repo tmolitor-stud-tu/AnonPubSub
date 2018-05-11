@@ -92,29 +92,32 @@ class ACO(Router):
         self._init_channel(publish["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
         
+        # don't do anything if we have already seen this publish message
         if publish["publisher"] not in self.publishers_seen[publish["channel"]]:
-            logger.info("New publisher %s for channel '%s' seen..." % (str(publish["publisher"]), str(publish["channel"])))
-            self.publishers_seen[publish["channel"]].add(publish["publisher"])
+            if publish["channel"] in self.subscriptions:
+                logger.info("New publisher %s for subscribed channel '%s' seen..." % (str(publish["publisher"]), str(publish["channel"])))
+                self.publishers_seen[publish["channel"]].add(publish["publisher"])
+                
+                # send out new ants if we didn't see this publisher before
+                seen_before = False
+                for subscriber in self.active_edges_to_publishers[publish["channel"]]:
+                    if publish["publisher"] in self.active_edges_to_publishers[publish["channel"]][subscriber]:
+                        seen_before = True
+                if not seen_before:
+                    logger.info("Recreating overlay for channel '%s' in %s seconds..." % (publish["channel"], str(ANT_ROUND_TIME)))
+                    # abort all overlay creation or maintenance timers and restart overlay creation from scratch in ANT_ROUND_TIME seconds
+                    if publish["channel"] in self.overlay_creation_timers:
+                        self._abort_timer(self.overlay_creation_timers[publish["channel"]])
+                    if publish["channel"] in self.overlay_maintenance_timers:
+                        self._abort_timer(self.overlay_maintenance_timers[publish["channel"]])
+                    self.overlay_creation_timers[publish["channel"]] = self._add_timer(ANT_ROUND_TIME, {
+                        "command": "ACO_create_overlay",
+                        "channel": publish["channel"],
+                        "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
+                        "retry": 0
+                    })
             
-            # send out new ants if we didn't see this publisher before
-            seen_before = False
-            for subscriber in self.active_edges_to_publishers[publish["channel"]]:
-                if publish["publisher"] in self.active_edges_to_publishers[publish["channel"]][subscriber]:
-                    seen_before = True
-            if not seen_before:
-                logger.info("Recreating overlay for channel '%s' in %s seconds..." % (publish["channel"], str(ANT_ROUND_TIME)))
-                # abort all overlay creation or maintenance timers and restart overlay creation from scratch in ANT_ROUND_TIME seconds
-                if publish["channel"] in self.overlay_creation_timers:
-                    self._abort_timer(self.overlay_creation_timers[publish["channel"]])
-                if publish["channel"] in self.overlay_maintenance_timers:
-                    self._abort_timer(self.overlay_maintenance_timers[publish["channel"]])
-                self.overlay_creation_timers[publish["channel"]] = self._add_timer(ANT_ROUND_TIME, {
-                    "command": "ACO_create_overlay",
-                    "channel": publish["channel"],
-                    "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
-                    "retry": 0
-                })
-            
+            # flood publish message further (but not on incoming connection)
             for con in [con for node_id, con in self.connections.items() if node_id != incoming_peer]:
                 logger.info("Routing publish to %s..." % str(con))
                 self._send_covert_msg(publish, con)
