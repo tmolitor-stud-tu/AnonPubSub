@@ -149,9 +149,10 @@ class ACO(Router):
         # delete active edge to this subscriber if the teardown didn't originate here AND the reverse active edge
         # for this subscriber is the only one (or if there is no reverse active edge at all because the reverse path ends here).
         # if it is NOT the only one, we are a forwarder for another publisher and the active edge is still needed
-        if incoming_connection and teardown["subscriber"] in self.active_edges_to_publishers[teardown["channel"]]:
-            if len(self.active_edges_to_publishers[teardown["channel"]][teardown["subscriber"]]) <= 1:
-                del self.active_edges[teardown["channel"]][teardown["subscriber"]]
+        if incoming_connection and ((teardown["subscriber"] in self.active_edges_to_publishers[teardown["channel"]] and 
+        len(self.active_edges_to_publishers[teardown["channel"]][teardown["subscriber"]]) <= 1) or
+        teardown["subscriber"] not in self.active_edges_to_publishers[teardown["channel"]]):
+            del self.active_edges[teardown["channel"]][teardown["subscriber"]]
         
         # route teardown message further along the reverse active edge to this publisher for this subscriber
         if node_id in self.connections:
@@ -354,13 +355,25 @@ class ACO(Router):
         # inform affected subscribers of broken path, so they can reestablish the overlay
         for channel in self.active_edges_to_publishers:
             for subscriber in self.active_edges_to_publishers[channel]:
-                for publisher in self.active_edges_to_publishers[channel][subscriber]:
+                for publisher in list(self.active_edges_to_publishers[channel][subscriber].keys()):
                     if peer == self.active_edges_to_publishers[channel][subscriber][publisher]["peer"]:
                         self._route_covert_data(Message("%s_error" % self.__class__.__name__, {
                             "channel": channel,
                             "subscriber": subscriber,
                             "publisher": publisher
                         }), command["connection"])
+        
+        # teardown broken path to publishers alsong the reverse active edges if the corresponding active edge is broken
+        for channel in self.active_edges:
+            for subscriber in list(self.active_edges[channel].keys()):
+                if self.active_edges[channel][subscriber] == peer and subscriber in self.active_edges_to_publishers[channel]:
+                    for publisher in list(self.active_edges_to_publishers[channel][subscriber].keys()):
+                        self._route_covert_data(Message("%s_teardown" % self.__class__.__name__, {
+                            "channel": channel,
+                            "subscriber": subscriber,
+                            "publisher": publisher,
+                            "version": self.active_edges_to_publishers[channel][subscriber][publisher]["version"]
+                        }))
         
         # clean up active edges to subscribers
         for channel in self.active_edges:
