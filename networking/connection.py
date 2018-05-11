@@ -98,7 +98,6 @@ class Connection(object):
         self.peer_key = None
         self.peer_id = None
         self.pinger_thread = None
-        self.covert_msg_queue = deque()
         self.watchdog_lock = RLock()
         self.watchdog_counter = MAX_MISSING_PINGS    # connection timeout = MAX_MISSING_PINGS * PING_INTERVAL
         self.watchdog_thread = None
@@ -106,6 +105,10 @@ class Connection(object):
         self.active_init = active_init
         self.reconnect_thread = None
         self.reconnect_try = reconnect_try
+        self.covert_msg_queue_lock = RLock()
+        self.covert_msg_queue = deque()
+        self.covert_messages_sent = 0
+        self.covert_messages_received = 0
         
         self.logger.info("Initializing new connection with %s (connect #%s)" % (str(self.addr), str(self.reconnect_try)))
         if self.active_init:
@@ -147,7 +150,12 @@ class Connection(object):
         if self.is_dead.is_set():
             #raise BrokenPipeError("Connection already closed!")
             return      # ignore send on dead connection (will be "garbage collected" by router command "remove_connection" soon)
-        self.covert_msg_queue.append(str(base64.b64encode(bytes(self._pack(msg))), 'ascii'))
+        with self.covert_msg_queue_lock:
+            self.covert_messages_sent += 1      # increment sent counter
+            msg = Message(msg)      # copy original message before adding message counter
+            msg["_covert_messages_counter"] = self.covert_messages_sent
+            # encode serialized message as base64 because this doesn't need additional escaping when it is json encoded later on
+            self.covert_msg_queue.append(str(base64.b64encode(bytes(self._pack(msg))), 'ascii'))
     
     def get_peer_id(self):
         #return str(self.addr)
@@ -228,8 +236,29 @@ class Connection(object):
                         self.watchdog_counter = MAX_MISSING_PINGS
                     # process covert messages
                     for covert_msg in self._unpack(base64.b64decode(bytes(msg["covert_messages"], "ascii")), False):
-                        if not filters.covert_msg_incoming(covert_msg, self):       # call filters framework
-                            Connection.router_queue.put({"command": "covert_message_received", "connection": self, "message": covert_msg})
+                        # no lock for covert_messages_received needed here because _incoming() is only called by one receiving thread
+                        # process only covert message expected next (= not already received AND no gap between last one and this one)
+                        if covert_msg["_covert_messages_counter"] == self.covert_messages_received + 1:
+                            self.covert_messages_received = covert_msg["_covert_messages_counter"]
+                            del covert_msg["_covert_messages_counter"]      # this is only internal, do not expose it to routers or filters
+                            if not filters.covert_msg_incoming(covert_msg, self):       # call filters framework
+                                Connection.router_queue.put({"command": "covert_message_received", "connection": self, "message": covert_msg})
+                    # send out ack
+                    ack_msg = Message("_ack", {
+                        # covert_messages_counter in network byte order (big endian) coded to hex (this is a constant length string)
+                        "covert_messages_counter": str(binascii.hexlify(struct.pack("!Q", self.covert_messages_received)), 'ascii')
+                    })
+                    data = self._encrypt(self._pack(ack_msg))
+                    if not self.is_dead.is_set():
+                        Connection.listener.get_socket().sendto(data, self.addr)
+                elif msg.get_type() == "_ack":
+                    # decode counter
+                    (msg["covert_messages_counter"],) = struct.unpack("!Q", binascii.unhexlify(msg["covert_messages_counter"]))
+                    with self.covert_msg_queue_lock:
+                        # remove all acked messages from outgoing queue
+                        while (len(self.covert_msg_queue) and
+                        self._unpack(base64.b64decode(bytes(self.covert_msg_queue[0], "ascii")), False)[0]["_covert_messages_counter"] <= msg["covert_messages_counter"]):
+                            self.covert_msg_queue.popleft()
                 else:
                     if not filters.msg_incoming(msg, self):     # call filters framework
                         Connection.router_queue.put({"command": "message_received", "connection": self, "message": msg})
@@ -264,13 +293,19 @@ class Connection(object):
     # the pinger utilizes our covert channel filled with messages from covert_msg_queue
     def _pinger(self):
         while not self.is_dead.wait(PING_INTERVAL):
-            data = ""
             bytes_left = MAX_COVERT_PAYLOAD
-            while len(self.covert_msg_queue) and len(self.covert_msg_queue[0]) < bytes_left:
-                serialized = self.covert_msg_queue.popleft()
-                data += serialized
-                bytes_left -= len(serialized)
-            msg = Message("_ping", {"covert_messages": data, "padding": str().ljust(bytes_left, " ")})
+            to_send = []
+            with self.covert_msg_queue_lock:
+                # add covert messages to ping message (unacked or new ones) until the size of MAX_COVERT_PAYLOAD would be exceeded
+                while len(self.covert_msg_queue) and len(self.covert_msg_queue[0]) < bytes_left:
+                    serialized = self.covert_msg_queue.popleft()
+                    to_send.append(serialized)
+                    bytes_left -= len(serialized)
+                # readd popped messages to our queue, they are removed only when a proper ack is received
+                self.covert_msg_queue.extendleft(reversed(to_send))     # retain original order!
+            
+            # send out ping message
+            msg = Message("_ping", {"covert_messages": "".join(to_send), "padding": str().ljust(bytes_left, " ")})
             data = self._encrypt(self._pack(msg))
             if not self.is_dead.is_set():
                 Connection.listener.get_socket().sendto(data, self.addr)
