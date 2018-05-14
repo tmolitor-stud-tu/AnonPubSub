@@ -1,3 +1,4 @@
+from .base import Router
 from .flooding import Flooding
 from .randomwalk import Randomwalk
 from .gossiping import Gossiping

@@ -11,11 +11,12 @@ logger = logging.getLogger(__name__)
 import filters
 
 
-OUTGOING_TIME = 1.0
-TIMING_FACTOR = 2.0
-
 class Router(object):
     stopped = Event()
+    settings = {
+        "OUTGOING_TIME": 1.0,
+        "TIMING_FACTOR": 2.0
+    }
     
     # *** public interface ***
     def __init__(self, node_id, queue):
@@ -38,6 +39,7 @@ class Router(object):
             self.timers_condition.notify()  # stop wait in _timers thread
         self.routing_thread.join()
         self.timers_thread.join()
+        Router.stopped.clear()  # all threads terminated, clear flag again to allow for new initialisations
     
     def subscribe(self, channel, callback):
         logger.info("Subscribing for data on channel '%s'..." % str(channel))
@@ -73,7 +75,7 @@ class Router(object):
             self.__outgoing("covert", msg, con)
     
     def _add_timer(self, timeout, command):
-        timeout *= TIMING_FACTOR    # delay timer for demonstrating purposes
+        timeout *= Router.settings["TIMING_FACTOR"]     # delay timer for demonstrating purposes
         timer_id = str(uuid.uuid4())
         with self.timers_condition:
             self.timers.add({"timeout": datetime.now().timestamp() + timeout, "id": timer_id, "command": command})
@@ -147,10 +149,14 @@ class Router(object):
         if peer not in self.last_outgoing_time:
             self.last_outgoing_time[peer] = {"normal": datetime.now().timestamp(), "covert": datetime.now().timestamp()}
         # always wait a minimum of OUTGOING_TIME seconds for every message
-        timestamp = max(self.last_outgoing_time[peer][msg_type] + OUTGOING_TIME, datetime.now().timestamp() + OUTGOING_TIME)
+        timestamp = max(
+            self.last_outgoing_time[peer][msg_type] + Router.settings["OUTGOING_TIME"],
+            datetime.now().timestamp() + Router.settings["OUTGOING_TIME"]
+        )
         self.last_outgoing_time[peer][msg_type] = timestamp     # update last outgoing timestamp
         
-        # add send timer (don't use _add_timer() directly because this method multiplies the timeout with TIMING_FACTOR, see the comments there)
+        # add send timer
+        # (don't use _add_timer() directly because this method multiplies the timeout with TIMING_FACTOR, see the comments there)
         with self.timers_condition:
             self.timers.add({"timeout": timestamp, "id": str(uuid.uuid4()), "command": command})
             self.timers_condition.notify()      # notify timers thread of changes
@@ -200,8 +206,8 @@ class Router(object):
         logger.debug("routing thread started...");
         while not Router.stopped.isSet():
             try:
-                command = self.queue.get(1)     #1 second timeout
-                if Router.stopped.isSet():      # don't process anything here if we are stopped
+                command = self.queue.get(True, 60)      # 60 seconds timeout
+                if Router.stopped.isSet():              # don't process anything here if we are stopped
                     break
             except Empty as err:
                 logger.debug("routing queue empty")

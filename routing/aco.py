@@ -11,22 +11,19 @@ from networking import Message
 from .base import Router
 
 
-# some constants
-ANONYMOUS_IDS = False
-ANT_COUNT = 5
-EVAPORATION_TIME = 5
-EVAPORATION_FACTOR = 0.75
-DEFAULT_ROUNDS = 15
-ACTIVATION_ROUNDS = 5
-ANT_ROUND_TIME = 5
-# maintain overlay every DEFAULT_ROUNDS times or zero, if no maintenance should be done
-#ANT_MAINTENANCE_TIME = DEFAULT_ROUNDS * ANT_ROUND_TIME
-ANT_MAINTENANCE_TIME = 0
-RETRY_TIME = 60
-# upper limit of exponential backoff (based on ANT_MAINTENANCE_TIME or a fixed value if no maintenance is used)
-MAX_RETRY_TIME = 3 * ANT_MAINTENANCE_TIME if ANT_MAINTENANCE_TIME else 1800
-
 class ACO(Router):
+    settings = {
+        "ANONYMOUS_IDS": True,
+        "ANT_COUNT": 5,
+        "EVAPORATION_TIME": 5,
+        "EVAPORATION_FACTOR": 0.75,
+        "DEFAULT_ROUNDS": 15,
+        "ACTIVATION_ROUNDS": 5,
+        "ANT_ROUND_TIME": 5,
+        # maintain overlay every DEFAULT_ROUNDS times or zero, if no maintenance should be done
+        #"ANT_MAINTENANCE_TIME": ACO.settings["DEFAULT_ROUNDS"] * ACO.settings["ANT_ROUND_TIME"],
+        "ANT_MAINTENANCE_TIME": 0,
+    }
     
     def __init__(self, node_id, queue):
         super(ACO, self).__init__(node_id, queue)
@@ -41,7 +38,7 @@ class ACO(Router):
         self.overlay_maintenance_timers = {}
         self.ant_versions = 0
         self.publishers_seen = {}
-        self._add_timer(EVAPORATION_TIME, {"command": "ACO_evaporation"})
+        self._add_timer(ACO.settings["EVAPORATION_TIME"], {"command": "ACO_evaporation"})
         logger.info("%s router initialized..." % self.__class__.__name__)
     
     def stop(self):
@@ -104,13 +101,13 @@ class ACO(Router):
                     if publish["publisher"] in self.active_edges_to_publishers[publish["channel"]][subscriber]:
                         seen_before = True
                 if not seen_before:
-                    logger.info("Recreating overlay for channel '%s' in %s seconds..." % (publish["channel"], str(ANT_ROUND_TIME)))
+                    logger.info("Recreating overlay for channel '%s' in %s seconds..." % (publish["channel"], str(ACO.settings["ANT_ROUND_TIME"])))
                     # abort all overlay creation or maintenance timers and restart overlay creation from scratch in ANT_ROUND_TIME seconds
                     if publish["channel"] in self.overlay_creation_timers:
                         self._abort_timer(self.overlay_creation_timers[publish["channel"]])
                     if publish["channel"] in self.overlay_maintenance_timers:
                         self._abort_timer(self.overlay_maintenance_timers[publish["channel"]])
-                    self.overlay_creation_timers[publish["channel"]] = self._add_timer(ANT_ROUND_TIME, {
+                    self.overlay_creation_timers[publish["channel"]] = self._add_timer(ACO.settings["ANT_ROUND_TIME"], {
                         "command": "ACO_create_overlay",
                         "channel": publish["channel"],
                         "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
@@ -176,13 +173,13 @@ class ACO(Router):
                     "publisher": error["publisher"],
                     "version": self.active_edges_to_publishers[error["channel"]][error["subscriber"]][error["publisher"]]["version"]
                 }))
-                logger.warning("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(ANT_ROUND_TIME)))
+                logger.warning("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(ACO.settings["ANT_ROUND_TIME"])))
                 # abort all overlay creation or maintenance timers and restart overlay creation from scratch in ANT_ROUND_TIME seconds
                 if error["channel"] in self.overlay_creation_timers:
                     self._abort_timer(self.overlay_creation_timers[error["channel"]])
                 if error["channel"] in self.overlay_maintenance_timers:
                     self._abort_timer(self.overlay_maintenance_timers[error["channel"]])
-                self.overlay_creation_timers[error["channel"]] = self._add_timer(ANT_ROUND_TIME, {
+                self.overlay_creation_timers[error["channel"]] = self._add_timer(ACO.settings["ANT_ROUND_TIME"], {
                     "command": "ACO_create_overlay",
                     "channel": error["channel"],
                     "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
@@ -395,7 +392,7 @@ class ACO(Router):
         
         # create new subscriber id for this channel if needed
         if command["channel"] not in self.subscriber_ids:
-            self.subscriber_ids[command["channel"]] = str(uuid.uuid4()) if ANONYMOUS_IDS else self.node_id
+            self.subscriber_ids[command["channel"]] = str(uuid.uuid4()) if ACO.settings["ANONYMOUS_IDS"] else self.node_id
         
         logger.info("Creating overlay for channel '%s'..." % command["channel"])
         self._call_command({
@@ -425,9 +422,9 @@ class ACO(Router):
         
         # init publishing identity and flood publishing advertisement to inform potential subscribers if automatic maintenance is deactivated
         if command["channel"] not in self.publishing:
-            self.publisher_ids[command["channel"]] = str(uuid.uuid4()) if ANONYMOUS_IDS else self.node_id
+            self.publisher_ids[command["channel"]] = str(uuid.uuid4()) if ACO.settings["ANONYMOUS_IDS"] else self.node_id
             self.publishing.add(command["channel"])
-            if not ANT_MAINTENANCE_TIME:
+            if not ACO.settings["ANT_MAINTENANCE_TIME"]:
                 self._route_covert_data(Message("%s_publish" % self.__class__.__name__, {
                     "channel": command["channel"],
                     "publisher": self.publisher_ids[command["channel"]]
@@ -452,9 +449,9 @@ class ACO(Router):
     def _ACO_evaporation_command(self, command):
         for channel in self.pheromones:
             for node_id in self.pheromones[channel]:
-                self.pheromones[channel][node_id] *= EVAPORATION_FACTOR
+                self.pheromones[channel][node_id] *= ACO.settings["EVAPORATION_FACTOR"]
         logger.debug("Pheromones evaporated: %s" % str(self.pheromones))
-        self._add_timer(EVAPORATION_TIME, {"command": "ACO_evaporation"})   # call this command again in EVAPORATION_TIME seconds
+        self._add_timer(ACO.settings["EVAPORATION_TIME"], {"command": "ACO_evaporation"})   # call this command again in EVAPORATION_TIME seconds
     
     def _ACO_create_overlay_command(self, command):
         # we are (re)creating the overlay from scratch, abort maintenance timer
@@ -465,11 +462,11 @@ class ACO(Router):
         len(set(itemgetter("peer")(entry) for entry in self.active_edges_to_publishers[command["channel"]][self.subscriber_ids[command["channel"]]].values())))
         
         # loop as long as we didn't reach DEFAULT_ROUNDS (use <= to wait for last activating ants if DEFAULT_ROUNDS % ACTIVATION_ROUNDS == 0)
-        if command["round_count"] <= DEFAULT_ROUNDS:
+        if command["round_count"] <= ACO.settings["DEFAULT_ROUNDS"]:
             self._send_out_ants(command["channel"], command["round_count"])
             
             # call us again in ANT_ROUND_TIME seconds
-            self.overlay_creation_timers[command["channel"]] = self._add_timer(ANT_ROUND_TIME, {
+            self.overlay_creation_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_ROUND_TIME"], {
                 "command": "ACO_create_overlay",
                 "channel": command["channel"],
                 "round_count": command["round_count"] + 1,
@@ -479,27 +476,27 @@ class ACO(Router):
             if command["channel"] in self.overlay_creation_timers:
                 del self.overlay_creation_timers[command["channel"]]
             if active_edges_present:
-                if ANT_MAINTENANCE_TIME:
-                    logger.info("Overlay for channel '%s' created (maintenance will now run every %d seconds)..." % (command["channel"], ANT_MAINTENANCE_TIME))
+                if ACO.settings["ANT_MAINTENANCE_TIME"]:
+                    logger.info("Overlay for channel '%s' created (maintenance will now run every %d seconds)..." % (command["channel"], ACO.settings["ANT_MAINTENANCE_TIME"]))
                 else:
                     logger.info("Overlay for channel '%s' created (maintenance will *NOT* happen after this)..." % command["channel"])
             else:
-                if ANT_MAINTENANCE_TIME:
-                    logger.info("Could not create overlay for channel '%s' (maintenance will now run every %d seconds)..." % (command["channel"], ANT_MAINTENANCE_TIME))
+                if ACO.settings["ANT_MAINTENANCE_TIME"]:
+                    logger.info("Could not create overlay for channel '%s' (maintenance will now run every %d seconds)..." % (command["channel"], ACO.settings["ANT_MAINTENANCE_TIME"]))
                 else:
                     logger.info("Could not create overlay for channel '%s' (maintenance will *NOT* happen after this)..." % command["channel"])
-            if ANT_MAINTENANCE_TIME:
+            if ACO.settings["ANT_MAINTENANCE_TIME"]:
                 # call maintain overlay command in ANT_MAINTENANCE_TIME seconds
-                self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ANT_MAINTENANCE_TIME, {
+                self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_MAINTENANCE_TIME"], {
                     "command": "ACO_maintain_overlay",
                     "channel": command["channel"],
                     # TODO: do fixed ttl values destroy the ant optimisation
-                    "ttl": DEFAULT_ROUNDS,      # bigger ttl to find new publishers (fixed to this value)
+                    "ttl": ACO.settings["DEFAULT_ROUNDS"],      # bigger ttl to find new publishers (fixed to this value)
                     "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
                 })
     
     def _ACO_maintain_overlay_command(self, command):
-        if command["round_count"] <= ACTIVATION_ROUNDS:
+        if command["round_count"] <= ACO.settings["ACTIVATION_ROUNDS"]:
             # don't send out maintenance ants if overlay creation is in progress
             if command["channel"] in self.overlay_creation_timers:
                 return
@@ -507,33 +504,34 @@ class ACO(Router):
             self._send_out_ants(command["channel"], command["round_count"], command["ttl"])
             
             # call us again in ANT_ROUND_TIME seconds
-            self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ANT_ROUND_TIME, {
+            self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_ROUND_TIME"], {
                 "command": "ACO_maintain_overlay",
                 "channel": command["channel"],
                 "ttl": ttl,
                 "round_count": command["round_count"] + 1,
             })
         else:
-            logger.info("Next overlay maintenance in %d seconds..." % ANT_MAINTENANCE_TIME)
+            logger.info("Next overlay maintenance in %d seconds..." % ACO.settings["ANT_MAINTENANCE_TIME"])
             # call us again in ANT_MAINTENANCE_TIME seconds
-            self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ANT_MAINTENANCE_TIME, {
+            self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_MAINTENANCE_TIME"], {
                 "command": "ACO_maintain_overlay",
                 "channel": command["channel"],
                 # TODO: do fixed ttl values destroy the ant optimisation
-                "ttl": DEFAULT_ROUNDS,      # bigger ttl to find new publishers (fixed to this value)
+                "ttl": ACO.settings["DEFAULT_ROUNDS"],      # bigger ttl to find new publishers (fixed to this value)
                 "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
             })
     
     def _send_out_ants(self, channel, round_count, ttl=6):
         if channel not in self.subscriber_ids:
-            self.subscriber_ids[channel] = str(uuid.uuid4()) if ANONYMOUS_IDS else self.node_id
-        logger.info("Channel '%s': Round %d: Sending out %d new searching ants..." % (channel, round_count, ANT_COUNT))
+            self.subscriber_ids[channel] = str(uuid.uuid4()) if ACO.settings["ANONYMOUS_IDS"] else self.node_id
+        logger.info("Channel '%s': Round %d: Sending out %d new searching ants..." % (channel, round_count, ACO.settings["ANT_COUNT"]))
         # send out ANT_COUNT ants
-        for i in range(0, ANT_COUNT):
+        for i in range(0, ACO.settings["ANT_COUNT"]):
             self.ant_versions += 1
             ant = Message("%s_ant" % self.__class__.__name__, {
                 "id": str(uuid.uuid4()),
-                "version": self.ant_versions if round_count % ACTIVATION_ROUNDS == 0 else 0,    # to be more private: don't send when not needed
+                # to be more private: don't send when not needed
+                "version": self.ant_versions if round_count % ACO.settings["ACTIVATION_ROUNDS"] == 0 else 0,
                 "channel": channel,
                 "ttl": max(ttl, round_count),                   # default minimum ttl is 6
                 "strictness": (random.random() * 20) % 20,      # strictness in [0, 20)
@@ -543,7 +541,7 @@ class ACO(Router):
                 "pheromones": 1.0,                              # pheromones to put on each edge (can be changed per ant here, if needed)
                 "returning": False,
                 # try to activate paths every ACTIVATION_ROUNDS rounds
-                "activating": round_count % ACTIVATION_ROUNDS == 0
+                "activating": round_count % ACO.settings["ACTIVATION_ROUNDS"] == 0
             })
             con = self._pheromone_choice(ant["channel"], self.connections, ant["strictness"])
             if con:

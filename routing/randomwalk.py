@@ -7,10 +7,12 @@ from networking import Message
 from .base import Router
 
 
-INITIAL_TTL = 60
-INITIAL_WALKERS = 5
 
 class Randomwalk(Router):
+    settings = {
+        "INITIAL_TTL": 60,
+        "INITIAL_WALKERS": 5
+    }
     
     def __init__(self, node_id, queue):
         super(Randomwalk, self).__init__(node_id, queue)
@@ -34,7 +36,7 @@ class Randomwalk(Router):
         #or only 1 peer to pass the message to if we are not the origin
         connections = list(numpy.random.choice(
             connections,
-            size=min(len(connections), INITIAL_WALKERS if not incoming_connection else 1)
+            size=min(len(connections), Randomwalk.settings["INITIAL_WALKERS"] if not incoming_connection else 1)
         ))
         for node_id in connections:
             self._send_msg(msg, self.connections[node_id])
@@ -43,7 +45,7 @@ class Randomwalk(Router):
         msg = Message("%s_data" % self.__class__.__name__, {
             "channel": command["channel"],
             "data": command["data"],
-            "ttl": INITIAL_TTL,
+            "ttl": Randomwalk.settings["INITIAL_TTL"],
             "nodes": []
         })
         self._route_data(msg)

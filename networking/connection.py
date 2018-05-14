@@ -24,12 +24,6 @@ from .message import Message
 import filters
 
 
-MAX_COVERT_PAYLOAD = 1200   # always + 94 bytes overhead for ping added to final encrypted packet (+ 58 bytes for unencrypted packets)
-PING_INTERVAL = 0.25
-MAX_MISSING_PINGS = 16      # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
-MAX_RECONNECTS = 3          # maximum consecutive reconnects after a connection failed
-ENCRYPT_PACKETS = True
-
 class Connection(object):
     reconnections_stopped = Event()
     node_id = None
@@ -38,10 +32,18 @@ class Connection(object):
     instances_lock = RLock()
     instances = {}
     len_size = len(struct.pack("!Q", 0))	# calculate length of packed unsigned long long int
+    settings = {
+        "MAX_COVERT_PAYLOAD": 1200,         # always + 94 bytes overhead for ping added to final encrypted packet (+ 58 bytes for unencrypted packets)
+        "PING_INTERVAL": 0.25,
+        "MAX_MISSING_PINGS": 16,           # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
+        "MAX_RECONNECTS": 3,               # maximum consecutive reconnects after a connection failed
+        "ENCRYPT_PACKETS": True
+    }
     
     # public static method to initialize networking
     @staticmethod
     def init(node_id, queue, host):
+        Connection.reconnections_stopped.clear()    # clear shutdown flag
         Connection.node_id = node_id
         Connection.router_queue = queue
         Connection.listener = Listener(node_id, host)
@@ -74,19 +76,18 @@ class Connection(object):
     @staticmethod
     def shutdown():
         # stop listener
-        Connection.listener.stop()
+        if Connection.listener:
+            Connection.listener.stop()
         # stop reconnections from happening
         Connection.reconnections_stopped.set()
         # terminate all connections (has to be done AFTER stopping the listener so to not create new connections by incoming packets)
         with Connection.instances_lock:
-            for addr, con in list(Connection.instances.items()):
+            for con in list(Connection.instances.values()):
                 con.terminate()
-        # close socket
-        Connection.listener.get_socket().close()
         # cleanup static class attributes
-        Connection.listener = None
         Connection.node_id = None
         Connection.router_queue = None
+        Connection.listener = None
         
     # class constructor
     def __init__(self, addr, active_init, reconnect_try):
@@ -99,7 +100,7 @@ class Connection(object):
         self.peer_id = None
         self.pinger_thread = None
         self.watchdog_lock = RLock()
-        self.watchdog_counter = MAX_MISSING_PINGS    # connection timeout = MAX_MISSING_PINGS * PING_INTERVAL
+        self.watchdog_counter = Connection.settings["MAX_MISSING_PINGS"]    # connection timeout = MAX_MISSING_PINGS * PING_INTERVAL
         self.watchdog_thread = None
         self.connection_state = 'IDLE'
         self.active_init = active_init
@@ -119,25 +120,25 @@ class Connection(object):
         self.watchdog_thread.start()
     
     def terminate(self):
-        if self.is_dead.is_set():
-            return
-        self.logger.info("Terminating connection")
-        self.is_dead.set()
-        with Connection.instances_lock:
-            if str(self.addr) in Connection.instances:
-                del Connection.instances[str(self.addr)]
-        if self.connection_state == "ESTABLISHED":
-            Connection.router_queue.put({
-                "command": "remove_connection",
-                "connection": self
-            })
+        self.logger.info("Terminating connection...")
+        if not self.is_dead.is_set():
+            self.logger.debug("closing connection...")
+            self.is_dead.set()
+            with Connection.instances_lock:
+                if str(self.addr) in Connection.instances:
+                    del Connection.instances[str(self.addr)]
+            if self.connection_state == "ESTABLISHED":
+                Connection.router_queue.put({
+                    "command": "remove_connection",
+                    "connection": self
+                })
         if self.pinger_thread and self.pinger_thread != current_thread():
             self.pinger_thread.join()
         if self.watchdog_thread and self.watchdog_thread != current_thread():
             self.watchdog_thread.join()
         if self.reconnect_thread and self.reconnect_thread != current_thread():
             self.reconnect_thread.join()
-        self.logger.debug("connection terminated successfully")
+        self.logger.info("Connection terminated successfully...")
     
     def send_msg(self, msg):
         if self.is_dead.is_set():
@@ -233,7 +234,7 @@ class Connection(object):
                 if msg.get_type() == "_ping":
                     # update ping watchdog
                     with self.watchdog_lock:
-                        self.watchdog_counter = MAX_MISSING_PINGS
+                        self.watchdog_counter = Connection.settings["MAX_MISSING_PINGS"]
                     # process covert messages
                     for covert_msg in self._unpack(base64.b64decode(bytes(msg["covert_messages"], "ascii")), False):
                         # no lock for covert_messages_received needed here because _incoming() is only called by one receiving thread
@@ -265,7 +266,10 @@ class Connection(object):
     
     def _reconnect(self):
         # try to reconnect after (PING_INTERVAL * MAX_MISSING_PINGS) + random(0, 2) seconds
-        reconnect = (PING_INTERVAL * MAX_MISSING_PINGS) + (float(int.from_bytes(os.urandom(2), byteorder='big', signed=False))/32768.0)
+        reconnect = (
+            (Connection.settings["PING_INTERVAL"] * Connection.settings["MAX_MISSING_PINGS"]) +
+            (float(int.from_bytes(os.urandom(2), byteorder='big', signed=False))/32768.0)
+        )
         self.logger.info("Reconnecting in %.3f seconds..." % reconnect)
         if not Connection.reconnections_stopped.wait(reconnect):
             Connection.connect_to(self.addr[0], self.reconnect_try+1)
@@ -274,26 +278,26 @@ class Connection(object):
     
     # *** internal threads ***
     def _watchdog(self):
-        while not self.is_dead.wait(PING_INTERVAL):
+        while not self.is_dead.wait(Connection.settings["PING_INTERVAL"]):
             with self.watchdog_lock:
                 self.watchdog_counter -= 1
                 copy = self.watchdog_counter
             if copy <= 0:
                 self.logger.warning("Ping watchdog triggered in connection state '%s'!" % self.connection_state)
                 self.terminate()
-                if self.active_init and self.reconnect_try < MAX_RECONNECTS:
+                if self.active_init and self.reconnect_try < Connection.settings["MAX_RECONNECTS"]:
                     if not Connection.reconnections_stopped.is_set():
                         self.reconnect_thread = Thread(name="local::"+Connection.node_id+"::_reconnect", target=self._reconnect)
                         self.reconnect_thread.start()
                     else:
                         self.logger.info("Reconnections disallowed by shutdown, not trying to reconnect...")
                 else:
-                    self.logger.info("Not active_init or maximum reconnects of %s reached, not trying to reconnect..." % str(MAX_RECONNECTS))
+                    self.logger.info("Not active_init or maximum reconnects of %s reached, not trying to reconnect..." % str(Connection.settings["MAX_RECONNECTS"]))
     
     # the pinger utilizes our covert channel filled with messages from covert_msg_queue
     def _pinger(self):
-        while not self.is_dead.wait(PING_INTERVAL):
-            bytes_left = MAX_COVERT_PAYLOAD
+        while not self.is_dead.wait(Connection.settings["PING_INTERVAL"]):
+            bytes_left = Connection.settings["MAX_COVERT_PAYLOAD"]
             to_send = []
             with self.covert_msg_queue_lock:
                 # add covert messages to ping message (unacked or new ones) until the size of MAX_COVERT_PAYLOAD would be exceeded
@@ -312,14 +316,14 @@ class Connection(object):
     
     # *** low level stuff (handling raw bytes data) ***
     def _encrypt(self, packet):
-        if not ENCRYPT_PACKETS:
+        if not Connection.settings["ENCRYPT_PACKETS"]:
             return packet
         chacha = ChaCha20Poly1305(self.peer_key)
         nonce = os.urandom(12)
         return nonce + chacha.encrypt(nonce, packet, None)
     
     def _decrypt(self, packet):
-        if not ENCRYPT_PACKETS:
+        if not Connection.settings["ENCRYPT_PACKETS"]:
             return packet
         chacha = ChaCha20Poly1305(self.peer_key)
         nonce = packet[:12]

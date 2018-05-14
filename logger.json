@@ -1,25 +1,41 @@
 {
 	"version": 1,
 	"disable_existing_loggers": false,
+	
 	"formatters": {
 		"simple": {
-			"format": "%(asctime)s [%(levelname)-7s] %(name)s {%(threadName)s} %(filename)s:%(lineno)d: %(message)s"
-		},
-		"with_ip": {
-			"format": "%(asctime)s [%(levelname)-7s] %(name)s {%(threadName)s} %(filename)s:%(lineno)d: %(message)s"
+			"format": "%(asctime)s [%(levelname)-7s] %(name)s {%(threadName)s} %(filename)s:%(lineno)d: %(message)s",
+			"color": true
 		}
 	},
-
+	
 	"handlers": {
 		"stderr": {
 			"class": "logging.StreamHandler",
 			"level": "DEBUG",
 			"formatter": "simple"
+		},
+		"queue": {
+			"class": "logging.handlers.QueueHandler",
+			"level": "DEBUG",
+			"formatter": "simple",
+			"queue": "to be set later"
+		},
+		"ignore": {
+			"class": "logging.NullHandler",
+			"level": "DEBUG"
 		}
 	},
-
-	"root": {
-		"level": "DEBUG",
-		"handlers": ["stderr"]
+	
+	"loggers": {
+		"": {
+			"level": "DEBUG",
+			"handlers": ["stderr", "queue"]
+		},
+		
+		"cherrypy.access": {
+			"level": "DEBUG",
+			"propagate": false
+		}
 	}
 }

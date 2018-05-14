@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+body {
+	padding: 0em;
+	margin: 0em;
+	box-sizing: border-box;
+}
+.log {
+	padding-bottom: 0em;
+	margin-bottom: 0em;
+}
+.log span {
+	font-family: "Lucida Console", Monaco, monospace;
+	font-size: 0.75em;
+}
+.log span.error, .log span.ok { font-weight: bold; }
+.log span.error { color: red; }
+.log span.ok { color: green; }
+
+.logcontainer {
+	position: absolute;
+	display: grid;
+	grid-template-rows: 2em auto;
+	grid-gap: 0em;
+	width: 100%;
+	height: 10em;
+	bottom: 0em;
+	border-top: 1px solid black;
+}
+.logcontainer .toolbar {
+	grid-row: 1;
+	padding: 0.25em;
+	background-color: lightgrey;
+	border-bottom: 1px solid black;
+}
+.logcontainer .toolbar .node {
+	position: absolute;
+	padding: 0.25em;
+	right: 0em;
+}
+.logcontainer .log {
+	grid-row: 2;
+	padding-left: 0.25em;
+	overflow-y: scroll;
+}
+/*show only INFO and above*/
+.logcontainer .log.INFO span[data-levelname="DEBUG"] { display: none; }
+/*show only WARNING and above*/
+.logcontainer .log.WARNING span[data-levelname="DEBUG"] { display: none; }
+.logcontainer .log.WARNING span[data-levelname="INFO"] { display: none; }
+/*show only ERROR and above*/
+.logcontainer .log.ERROR span[data-levelname="DEBUG"] { display: none; }
+.logcontainer .log.ERROR span[data-levelname="INFO"] { display: none; }
+.logcontainer .log.ERROR span[data-levelname="WARNING"] { display: none; }
+</style>
+<script type="text/javascript" src="jquery.js"></script>
+<script type="text/javascript"> (function() {
+var pad = function(pad, str, padLeft) {
+	if(typeof str === 'undefined')
+		return pad;
+	if(padLeft)
+		return (pad + str).slice(-pad.length);
+	else
+		return (str + pad).substring(0, pad.length);
+}
+var send_command = function(command) {
+	return $.ajax({
+		type: "POST",
+		url: "/command",
+		data: JSON.stringify(command),
+		processData: false,
+		contentType: "application/json; charset=utf-8",
+		dataType: "text"
+	}).then(function(data) {
+		if(data != "OK")
+		{
+			alert("Command returned unexpected data: " + data)
+			throw data
+		}
+		return data;
+	}, function(error) {
+		alert("Could not send command: " + error);
+		throw error;
+	});
+};
+
+$(document).ready(function() {
+	var sse = new EventSource("/events");
+	sse.addEventListener("open", function(e) {
+		$(".log").append($("<span>").addClass("ok").text("SSE connection established!").append($("<br>")));
+	});
+	sse.addEventListener("error", function(e) {
+		$(".log").append($("<span>").addClass("error").text("SSE connection error, retrying!").append($("<br>")))
+	});
+	sse.addEventListener("log", function(e) {
+		//extract log message and set data properties for filtering
+		var d = JSON.parse(e.data);
+		var msg = $("<span>").text(`${d.asctime} [${pad(Array(7+1).join("\u00A0"), d.levelname)}] ${d.name} {${d.threadName}} ${d.filename}:${d.lineno}: ${d.message}`).append($("<br>"));
+		msg.attr("data-levelname", d.levelname);
+		msg.attr("data-module", d.module);
+		msg.attr("data-name", d.name);
+		msg.attr("data-threadname", (d.threadName || "").split("::").pop());	//only the last element of thread id is used for filtering
+		
+		var scroll_down = $(".log")[0].scrollHeight - $(".log")[0].clientHeight <= $(".log")[0].scrollTop + 1;
+		$(".log").append(msg);
+		if(scroll_down)
+		{
+			console.log("DOWN");
+			$(".log")[0].scrollTop = $(".log")[0].scrollHeight - $(".log")[0].clientHeight;
+		}
+	});
+	sse.addEventListener("new_node_id", function(e) {
+		var data = JSON.parse(e.data);
+		$(".logcontainer .toolbar .node").text(data.node_id);
+	});
+	
+	//log window toolbar
+	$(".clear").click(function() {
+		$(this).parent().parent().find(".log span").remove();
+	});
+	$(".logcontainer .toolbar .levelname").change(function() {
+		var level = $(this).val();
+		$(".log").removeClass("DEBUG INFO WARNING ERROR");
+		$(".log").addClass(level);
+	});
+	
+	//settings window
+	$("#start").click(function() {
+		send_command({
+			"command": "start",
+			"router": "ACO",
+			"settings": {
+				"networking": {
+					"Connection": {
+						//always + 94 bytes overhead for ping added to final encrypted packet (+ 58 bytes for unencrypted packets)
+						"MAX_COVERT_PAYLOAD": 1200,
+						"PING_INTERVAL": 0.25,
+						//consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
+						"MAX_MISSING_PINGS": 16,
+						//maximum consecutive reconnects after a connection failed
+						"MAX_RECONNECTS": 3,
+						"ENCRYPT_PACKETS": true
+					}
+				},
+				"routing": {
+					"Router": {
+						"OUTGOING_TIME": 1.0,
+						"TIMING_FACTOR": 2.0
+					},
+					"ACO": {
+						"ANONYMOUS_IDS": true,
+						"ANT_COUNT": 5,
+						"EVAPORATION_TIME": 5,
+						"EVAPORATION_FACTOR": 0.75,
+						"DEFAULT_ROUNDS": 15,
+						"ACTIVATION_ROUNDS": 5,
+						"ANT_ROUND_TIME": 5,
+						// maintain overlay every DEFAULT_ROUNDS times or zero, if no maintenance should be done
+						"ANT_MAINTENANCE_TIME": self.DEFAULT_ROUNDS * self.ANT_ROUND_TIME,
+						//"ANT_MAINTENANCE_TIME": 0,
+					}
+				}
+			}
+		});
+	});
+	$("#stop").click(function() {
+		send_command({
+			"command": "stop"
+		});
+	});
+});
+})();</script>
+</head>
+<body>
+	<button id="start">Start</button>
+	<button id="stop">Stop</button>
+	<div class="logcontainer">
+		<div class="toolbar">
+			<button class="clear">Clear</button>
+			<label>Loglevel: <select class="levelname">
+				<option>DEBUG</option>
+				<option selected>INFO</option>
+				<option>WARNING</option>
+				<option>ERROR</option>
+			</select></label>
+			<div class="node"></div>
+		</div>
+		<div class="log INFO"></div>
+	</div>
+</body>
+</html>

@@ -7,10 +7,11 @@ from networking import Message
 from .base import Router
 
 
-INITIAL_TTL = 60
-GOSSIPING_PEERS = 2
-
 class Gossiping(Router):
+    settings = {
+        "INITIAL_TTL": 60,
+        "GOSSIPING_PEERS": 2
+    }
     
     def __init__(self, node_id, queue):
         super(Gossiping, self).__init__(node_id, queue)
@@ -33,7 +34,7 @@ class Gossiping(Router):
         #use at most GOSSIPING_PEERS randomly selected peers to send our message to
         connections = list(numpy.random.choice(
             connections,
-            size=min(len(connections), GOSSIPING_PEERS)
+            size=min(len(connections), Gossiping.settings["GOSSIPING_PEERS"])
         ))
         for node_id in connections:
             self._send_msg(msg, self.connections[node_id])
@@ -42,7 +43,7 @@ class Gossiping(Router):
         msg = Message("%s_data" % self.__class__.__name__, {
             "channel": command["channel"],
             "data": command["data"],
-            "ttl": INITIAL_TTL,
+            "ttl": Gossiping.settings["INITIAL_TTL"],
             "nodes": []
         })
         self._route_data(msg)
