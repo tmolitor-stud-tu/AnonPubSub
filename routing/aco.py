@@ -386,9 +386,13 @@ class ACO(Router):
                         del self.active_edges_to_publishers[channel][subscriber][publisher]
     
     def _subscribe_command(self, command):
-        # call parent class for common tasks
-        super(ACO, self)._subscribe_command(command)
+        # initialize channel
         self._init_channel(command["channel"])
+        
+        # ignore already subscribed channels (only update the callback)
+        if command["channel"] in self.subscriptions:
+            # call parent class for common tasks (update self.subscriptions)
+            return super(ACO, self)._subscribe_command(command)
         
         # create new subscriber id for this channel if needed
         if command["channel"] not in self.subscriber_ids:
@@ -401,6 +405,9 @@ class ACO(Router):
             "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
             "retry": 0
         })
+        
+        # call parent class for common tasks (update self.subscriptions)
+        super(ACO, self)._subscribe_command(command)
     
     def _unsubscribe_command(self, command):
         # call parent class for common tasks

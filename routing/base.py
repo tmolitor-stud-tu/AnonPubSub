@@ -125,8 +125,6 @@ class Router(object):
             self._route_data(command["message"], command["connection"])
     
     def _subscribe_command(self, command):
-        if command["channel"] in self.subscriptions:
-            return
         self.subscriptions[command["channel"]] = command["callback"]
     
     def _unsubscribe_command(self, command):

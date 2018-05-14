@@ -73,13 +73,16 @@ def apply_settings(data, path, apply_to):
         apply_to.settings[key] = value
 def subscribe(command, router, received):
     if router:  # only subscribe if we have a router
-        received[command["channel"]] = 0
-        def dummy_receiver(data):
-            if data != received[command["channel"]] + 1:
-                logger.error("UNEXPECTED DATA RECEIVED (%s != %s)!!!" % (str(data), str(received[command["channel"]] + 1)))
-            received[command["channel"]] = data
-        router.subscribe(command["channel"], dummy_receiver)
-        event_queue.put({"type": "subscribed", "data": {"channel": command["channel"]}})
+        if command["channel"] not in received or True:
+            received[command["channel"]] = 0
+            def dummy_receiver(data):
+                if data != received[command["channel"]] + 1:
+                    logger.error("UNEXPECTED DATA RECEIVED (%s != %s)!!!" % (str(data), str(received[command["channel"]] + 1)))
+                received[command["channel"]] = data
+            router.subscribe(command["channel"], dummy_receiver)
+            event_queue.put({"type": "subscribed", "data": {"channel": command["channel"]}})
+        else:
+            event_queue.put({"type": "already_subscribed", "data": {"channel": command["channel"]}})
     else:
         logger.error("Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
         event_queue.put({"type": "subscribe_failed", "data": {"channel": command["channel"], "error": "router uninitialized"}})
