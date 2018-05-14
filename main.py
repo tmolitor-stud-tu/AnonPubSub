@@ -82,6 +82,7 @@ def subscribe(command, router, received):
         event_queue.put({"type": "subscribed", "data": {"channel": command["channel"]}})
     else:
         logger.error("Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
+        event_queue.put({"type": "subscribe_failed", "data": {"channel": command["channel"], "error": "router uninitialized"}})
 event_queue.put({"type": "new_node_id", "data": {"node_id": node_id}})
 while True:
     # periodically publish a simple counter on all configured channels (about every second)
@@ -91,6 +92,7 @@ while True:
             to_publish[channel] += 1
         else:
             logger.error("Cannot publish on channel '%s': no router initialized!" % str(channel))
+            event_queue.put({"type": "publish_failed", "data": {"channel": channel, "error": "router uninitialized"}})
     
     # process UI commands
     try:
@@ -98,7 +100,7 @@ while True:
     except Empty as err:
         #logger.debug("main command queue empty")
         continue
-    if command["command"][:1] != "_":
+    if command["command"][:1] != "_":       # don't log internal commands
         logger.info("Got GUI command: %s" % str(command))
     if command["command"] == "start":
         if not router:
@@ -136,8 +138,12 @@ while True:
         event_queue.put("reset_pending")
         cleanup_and_exit(0)     # the startup script will restart this node after a few seconds
     elif command["command"] == "connect":
-        networking.Connection.connect_to(command["addr"])
-        event_queue.put({"type": "", "data": {}})
+        if router:  # router and network are initialized at once, if we have no router our network is down, too
+            networking.Connection.connect_to(command["addr"])
+            event_queue.put({"type": "connection_sequence_started", "data": {"addr": command["addr"], "status": "ok"}})
+        else:
+            logger.error("Cannot connect to peer at %s: network not initialized!" % str(command["addr"]))
+            event_queue.put({"type": "connection_sequence_started", "data": {"addr": command["addr"], "status": "error", "error": "router uninitialized"}})
     elif command["command"] == "publish":
         to_publish[command["channel"]] = 0
         event_queue.put({"type": "published", "data": {"channel": command["channel"]}})

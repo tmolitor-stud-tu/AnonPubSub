@@ -2,6 +2,11 @@
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script type="text/javascript" src="/js_lib/jquery.js"></script>
+<script type="text/javascript" src="/js_lib/jquery-ui.js"></script>
+<link rel="stylesheet" type="text/css" href="/js_lib/jquery-ui.css">
+<link rel="stylesheet" type="text/css" href="/js_lib/jquery-ui.structure.css">
+<link rel="stylesheet" type="text/css" href="/js_lib/jquery-ui.theme.css">
 <style type="text/css">
 body {
 	padding: 0em;
@@ -56,7 +61,6 @@ body {
 .logcontainer .log.ERROR span[data-levelname="INFO"] { display: none; }
 .logcontainer .log.ERROR span[data-levelname="WARNING"] { display: none; }
 </style>
-<script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript"> (function() {
 var pad = function(pad, str, padLeft) {
 	if(typeof str === 'undefined')
@@ -117,7 +121,11 @@ $(document).ready(function() {
 		$(".logcontainer .toolbar .node").text(data.node_id);
 	});
 	
-	//log window toolbar
+	//log window
+	$(".logcontainer").resizable({
+		autoHide: false,
+		handles: "n"
+	});
 	$(".clear").click(function() {
 		$(this).parent().parent().find(".log span").remove();
 	});
@@ -171,12 +179,27 @@ $(document).ready(function() {
 			"command": "stop"
 		});
 	});
+	$("#subscribe").click(function() {
+		send_command({
+			"command": "subscribe",
+			"channel": "test"
+		});
+	});
+	$("#connect").click(function() {
+		send_command({
+			"command": "connect",
+			"addr": $("#addr").val()
+		});
+	});
 });
 })();</script>
 </head>
 <body>
 	<button id="start">Start</button>
 	<button id="stop">Stop</button>
+	<button id="subscribe">Subscribe</button>
+	<input type="text" id="addr" value="127.0.0.20">
+	<button id="connect">Connect</button>
 	<div class="logcontainer">
 		<div class="toolbar">
 			<button class="clear">Clear</button>
