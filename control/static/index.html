@@ -81,12 +81,12 @@ var send_command = function(command) {
 	}).then(function(data) {
 		if(data != "OK")
 		{
-			alert("Command returned unexpected data: " + data)
+			alert("Command returned unexpected data: " + JSON.stringify(data))
 			throw data
 		}
 		return data;
 	}, function(error) {
-		alert("Could not send command: " + error);
+		alert("Could not send command: " + JSON.stringify(error));
 		throw error;
 	});
 };
@@ -102,6 +102,8 @@ $(document).ready(function() {
 	sse.addEventListener("log", function(e) {
 		//extract log message and set data properties for filtering
 		var d = JSON.parse(e.data);
+		if(d.levelname == "DEBUG")	//TODO: DEBUG nicht mehr ignorieren
+			return;
 		var msg = $("<span>").text(`${d.asctime} [${pad(Array(7+1).join("\u00A0"), d.levelname)}] ${d.name} {${d.threadName}} ${d.filename}:${d.lineno}: ${d.message}`).append($("<br>"));
 		msg.attr("data-levelname", d.levelname);
 		msg.attr("data-module", d.module);
@@ -112,7 +114,8 @@ $(document).ready(function() {
 		$(".log").append(msg);
 		if(scroll_down)
 		{
-			console.log("DOWN");
+			//remove old elements in autoscroll mode
+			$(".log span").slice(0, -64).remove();
 			$(".log")[0].scrollTop = $(".log")[0].scrollHeight - $(".log")[0].clientHeight;
 		}
 	});
@@ -159,7 +162,7 @@ $(document).ready(function() {
 						"TIMING_FACTOR": 2.0
 					},
 					"ACO": {
-						"ANONYMOUS_IDS": true,
+						"ANONYMOUS_IDS": false,
 						"ANT_COUNT": 5,
 						"EVAPORATION_TIME": 5,
 						"EVAPORATION_FACTOR": 0.75,
@@ -167,7 +170,7 @@ $(document).ready(function() {
 						"ACTIVATION_ROUNDS": 5,
 						"ANT_ROUND_TIME": 5,
 						// maintain overlay every DEFAULT_ROUNDS times or zero, if no maintenance should be done
-						"ANT_MAINTENANCE_TIME": self.DEFAULT_ROUNDS * self.ANT_ROUND_TIME,
+						"ANT_MAINTENANCE_TIME": self.DEFAULT_ROUNDS * self.ANT_ROUND_TIME,	//TODO: richtig berecnnen
 						//"ANT_MAINTENANCE_TIME": 0,
 					}
 				}
@@ -185,10 +188,21 @@ $(document).ready(function() {
 			"channel": "test"
 		});
 	});
+	$("#publish").click(function() {
+		send_command({
+			"command": "publish",
+			"channel": "test"
+		});
+	});
 	$("#connect").click(function() {
 		send_command({
 			"command": "connect",
 			"addr": $("#addr").val()
+		});
+	});
+	$("#dump").click(function() {
+		send_command({
+			"command": "dump",
 		});
 	});
 });
@@ -198,8 +212,10 @@ $(document).ready(function() {
 	<button id="start">Start</button>
 	<button id="stop">Stop</button>
 	<button id="subscribe">Subscribe</button>
+	<button id="publish">Publish</button>
 	<input type="text" id="addr" value="127.0.0.20">
 	<button id="connect">Connect</button>
+	<button id="dump">Dump internal state of router</button>
 	<div class="logcontainer">
 		<div class="toolbar">
 			<button class="clear">Clear</button>

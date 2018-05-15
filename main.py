@@ -136,6 +136,7 @@ while True:
             router = None
         networking.Connection.shutdown()
         queue = None
+        to_publish = {}
         event_queue.put("stop_complete")
     elif command["command"] == "reset":
         event_queue.put("reset_pending")
@@ -152,6 +153,9 @@ while True:
         event_queue.put({"type": "published", "data": {"channel": command["channel"]}})
     elif command["command"] == "subscribe":
         subscribe(command, router, received)
+    elif command["command"] == "dump":
+        if router:
+            router.dump()
     elif command["command"] == "_new_http_client":
         event_queue.put({"type": "new_node_id", "data": {"node_id": node_id}})
     else:

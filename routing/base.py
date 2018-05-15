@@ -57,11 +57,17 @@ class Router(object):
         })
     
     def publish(self, channel, data):
-        logger.info("Publishing data on channel '%s'..." % str(channel))
+        logger.debug("Publishing data on channel '%s'..." % str(channel))
         self.queue.put({
             "command": "publish",
             "channel": channel,
             "data": data
+        })
+    
+    # this dumps internal data structures of the child class to logger if implemented
+    def dump(self):
+        self.queue.put({
+            "command": "dump",
         })
     
     # *** internal api methods for child classes ***
@@ -133,6 +139,9 @@ class Router(object):
     
     def _publish_command(self, command):
         pass    # this command has no common implementation that could be used by child classes
+    
+    def _dump_command(self, command):
+        pass    # this command has no common implementation that could be used by child classes but is not mandatory to implement
     
     # *** internal methods, DON'T touch from child classes ***
     def __outgoing(self, msg_type, msg, con):
