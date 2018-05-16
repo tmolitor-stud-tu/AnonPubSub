@@ -16,7 +16,7 @@ import routing
 
 
 # parse commandline
-parser = argparse.ArgumentParser(description='CoolOverlay node.')
+parser = argparse.ArgumentParser(description='CoolOverlay node.\nCommunication Port: 9999, HTTP Control Port: 9980')
 parser.add_argument("-l", "--listen", metavar='HOSTNAME', help="Local hostname or IP to listen on", default="0.0.0.0")
 parser.add_argument("--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
