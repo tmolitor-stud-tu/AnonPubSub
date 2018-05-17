@@ -23,6 +23,7 @@ class ACO(Router):
         # maintain overlay every DEFAULT_ROUNDS times or zero, if no maintenance should be done
         #"ANT_MAINTENANCE_TIME": ACO.settings["DEFAULT_ROUNDS"] * ACO.settings["ANT_ROUND_TIME"],
         "ANT_MAINTENANCE_TIME": 0,
+        "AGGRESSIVE_TEARDOWN": False,
     }
     
     def __init__(self, node_id, queue):
@@ -286,13 +287,14 @@ class ACO(Router):
                         str(ant["publisher"]),
                         str(incoming_connection)
                     ))
-                    self._route_covert_data(Message("%s_teardown" % self.__class__.__name__, {
-                        "channel": ant["channel"],
-                        "subscriber": ant["subscriber"],
-                        "publisher": ant["publisher"],
-                        # this has to be the edge version, not the ant version!
-                        "version": self.reverse_edges[ant["channel"]][ant["subscriber"]][ant["publisher"]]["version"]
-                    }))
+                    if ACO.settings["AGGRESSIVE_TEARDOWN"]:
+                        self._route_covert_data(Message("%s_teardown" % self.__class__.__name__, {
+                            "channel": ant["channel"],
+                            "subscriber": ant["subscriber"],
+                            "publisher": ant["publisher"],
+                            # this has to be the edge version, not the ant version!
+                            "version": self.reverse_edges[ant["channel"]][ant["subscriber"]][ant["publisher"]]["version"]
+                        }))
                 # always increment edge versions, never decrement
                 if (ant["publisher"] not in self.reverse_edges[ant["channel"]][ant["subscriber"]] or
                 ant["version"] >= self.reverse_edges[ant["channel"]][ant["subscriber"]][ant["publisher"]]["version"]):

@@ -17,7 +17,7 @@ import routing
 
 # parse commandline
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="AnonPubSub node.\nHTTP Control Port: 9980\nNode Communication Port: 9999")
-parser.add_argument("-l", "--listen", metavar='HOSTNAME', help="Local hostname or IP to listen on", default="0.0.0.0")
+parser.add_argument("-l", "--listen", metavar='HOSTNAME', help="Local hostname or IP to listen on (Default: 0.0.0.0 e.g. any)", default="0.0.0.0")
 parser.add_argument("--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
 
