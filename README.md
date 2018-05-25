@@ -8,3 +8,4 @@ Package names are debian ones.
 - python3-cherrypy3
 - python3-sortedcontainers
 - python3-networkx
+- python3-sortedcollections
