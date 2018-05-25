@@ -69,6 +69,8 @@ def apply_settings(data, path, apply_to):
             data = data[item]
         else:
             return
+    if not apply_to.settings:
+        apply_to.settings = {}
     for key, value in dict(data).items():
         apply_to.settings[key] = value
 def subscribe(command, router, received):
@@ -154,8 +156,10 @@ while True:
     elif command["command"] == "subscribe":
         subscribe(command, router, received)
     elif command["command"] == "dump":
+        def cb(state):
+            event_queue.put({"type": "dump", "data": state})
         if router:
-            router.dump()
+            router.dump(cb)
     elif command["command"] == "_new_http_client":
         event_queue.put({"type": "new_node_id", "data": {"node_id": node_id}})
     else:

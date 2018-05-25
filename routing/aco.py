@@ -241,7 +241,7 @@ class ACO(Router):
                 logger.debug("Loop detected, killing ant %s!" % str(searching_ant))
                 return
             searching_ant["path"].append(self.node_id)
-            connections = {key: value for key, value in self.connections.items() if value!=incoming_connection}
+            connections = {key: value for key, value in self.connections.items() if key != incoming_peer}
             con = self._pheromone_choice(searching_ant["channel"], connections, searching_ant["strictness"])
             if con:
                 logger.debug("Sending out searching ant: %s to %s..." % (str(searching_ant), str(con)))
@@ -338,7 +338,7 @@ class ACO(Router):
             self._send_covert_msg(ant, self.connections[next_node])
     
     def _route_data(self, msg, incoming_connection=None):
-        if incoming_connection:
+        if incoming_connection:     # don't log locally published data (makes the log more clear)
             logger.info("Routing data: %s coming from %s..." % (str(msg), str(incoming_connection)))
         self._init_channel(msg["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
@@ -444,18 +444,20 @@ class ACO(Router):
         super(ACO, self)._subscribe_command(command)
     
     def _unsubscribe_command(self, command):
-        # call parent class for common tasks
-        super(ACO, self)._unsubscribe_command(command)
-        self._init_channel(command["channel"])
-        
-        self._send_covert_msg(Message("%s_unsubscribe" % self.__class__.__name__, {
-            "channel": command["channel"],
-            "subscriber": self.subscriber_ids[command["channel"]]
-        }))
-        
-        # remove old subscriber id if not needed anymore
-        if command["channel"] not in self.subscriber_ids:
-            del self.subscriber_ids[command["channel"]]
+        # only do unsubscribe if needed
+        if command["channel"] in self.subscriptions:
+            # call parent class for common tasks
+            super(ACO, self)._unsubscribe_command(command)
+            self._init_channel(command["channel"])
+            
+            self._send_covert_msg(Message("%s_unsubscribe" % self.__class__.__name__, {
+                "channel": command["channel"],
+                "subscriber": self.subscriber_ids[command["channel"]]
+            }))
+            
+            # remove old subscriber id if not needed anymore
+            if command["channel"] in self.subscriber_ids:
+                del self.subscriber_ids[command["channel"]]
     
     def _publish_command(self, command):
         # no need to call parent class here, doing everything on our own
@@ -478,15 +480,19 @@ class ACO(Router):
         self._route_data(msg)
     
     def _dump_command(self, command):
-        logger.info("**DUMPING INTERNAL STATE:**")
-        logger.info("subscriber_ids: %s" % str(self.subscriber_ids))
-        logger.info("publisher_ids: %s" % str(self.publisher_ids))
-        logger.info("pheromones: %s" % str(self.pheromones))
-        logger.info("active_edges: %s" % str(self.active_edges))
-        logger.info("reverse_edges: %s" % str(self.reverse_edges))
-        logger.info("publishing: %s" % str(self.publishing))
-        logger.info("ant_versions: %s" % str(self.ant_versions))
-        logger.info("publishers_seen: %s" % str(self.publishers_seen))
+        state = {
+            "subscriber_ids": self.subscriber_ids,
+            "publisher_ids": self.publisher_ids,
+            "pheromones": self.pheromones,
+            "active_edges": self.active_edges,
+            "reverse_edges": self.reverse_edges,
+            "publishing": self.publishing,
+            "ant_versions": self.ant_versions,
+            "publishers_seen": self.publishers_seen
+        }
+        logger.info("INTERNAL STATE:\n%s" % str(state))
+        if command["callback"]:
+            command["callback"](state)
     
     # *** the following commands are internal to ACO ***
     def _ACO_update_pheromones_command(self, command):
@@ -542,7 +548,7 @@ class ACO(Router):
                 self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_MAINTENANCE_TIME"], {
                     "command": "ACO_maintain_overlay",
                     "channel": command["channel"],
-                    # TODO: do fixed ttl values destroy the ant optimisation
+                    # TODO: do fixed ttl values destroy the ant optimisation?
                     "ttl": ACO.settings["DEFAULT_ROUNDS"],      # bigger ttl to find new publishers (fixed to this value)
                     "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
                 })
@@ -568,7 +574,7 @@ class ACO(Router):
             self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_MAINTENANCE_TIME"], {
                 "command": "ACO_maintain_overlay",
                 "channel": command["channel"],
-                # TODO: do fixed ttl values destroy the ant optimisation
+                # TODO: do fixed ttl values destroy the ant optimisation?
                 "ttl": ACO.settings["DEFAULT_ROUNDS"],      # bigger ttl to find new publishers (fixed to this value)
                 "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
             })

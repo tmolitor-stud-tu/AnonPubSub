@@ -65,9 +65,10 @@ class Router(object):
         })
     
     # this dumps internal data structures of the child class to logger if implemented
-    def dump(self):
+    def dump(self, callback=None):
         self.queue.put({
             "command": "dump",
+            "callback": callback
         })
     
     # *** internal api methods for child classes ***
@@ -141,7 +142,8 @@ class Router(object):
         pass    # this command has no common implementation that could be used by child classes
     
     def _dump_command(self, command):
-        pass    # this command has no common implementation that could be used by child classes but is not mandatory to implement
+        # this command has no common implementation that could be used by child classes but is not mandatory to implement
+        logger.error("This router does not support dumping of its internal state!")
     
     # *** internal methods, DON'T touch from child classes ***
     def __outgoing(self, msg_type, msg, con):
@@ -177,7 +179,7 @@ class Router(object):
             else:
                 raise ValueError("Message type '%s' unknown!" % command["type"])
         except Exception as e:
-            logger.warning("Failed to really send covert message to peer %s: %s" % (str(command["connection"].get_peer_id()), str(e)))
+            logger.warning("Failed to really send %s message to peer %s: %s" % (str(command["type"]), str(command["connection"].get_peer_id()), str(e)))
     
     # *** internal threads ***
     def _timers(self):
