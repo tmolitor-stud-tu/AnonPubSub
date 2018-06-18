@@ -28,7 +28,7 @@ class Flooding(Router):
         "MAX_HASHES": 1000,         # this limits the maximum diameter of the underlay to this value
         "SUBSCRIBE_DELAY": 2.0,
         "RANDOM_MASTER_PUBLISH": False,
-        "ACTIVE_PATH_PROBES": True,
+        "REFLOOD_DELAY": 2.0,
     }
     
     def __init__(self, node_id, queue):
@@ -37,9 +37,8 @@ class Flooding(Router):
         self.master = {}
         self.subscriber_ids = {}
         self.subscription_timers = {}
+        self.reflood_timers = {}
         self.advertisement_routing_table = {}
-        self.outstanding_reflood = {}
-        self.outstanding_path_probes = {}
         self.data_routing_table = {}
         logger.info("%s router initialized..." % self.__class__.__name__)
     
@@ -50,10 +49,8 @@ class Flooding(Router):
             self.data_routing_table[channel] = {}
         if not channel in self.master:
             self.master[channel] = False
-        if not channel in self.outstanding_reflood:
-            self.outstanding_reflood[channel] = {}
-        if not channel in self.outstanding_path_probes:
-            self.outstanding_path_probes[channel] = {}
+        if not channel in self.reflood_timers:
+            self.reflood_timers[channel] = {}
     
     @functools.lru_cache(maxsize=4096)  # ~4 * settings["MAX_HASHES"] (power of 2 is faster)
     def _hash(self, nonce):
@@ -110,8 +107,6 @@ class Flooding(Router):
             return self._route_init(msg, incoming_connection)
         elif msg.get_type().endswith("_advertise"):
             return self._route_advertise(msg, incoming_connection)
-        elif msg.get_type().endswith("_probePath"):
-            return self._route_probePath(msg, incoming_connection)
         elif msg.get_type().endswith("_unadvertise"):
             return self._route_unadvertise(msg, incoming_connection)
     
@@ -161,59 +156,6 @@ class Flooding(Router):
             logger.info("Routing advertisement for channel '%s' to %s..." % (str(advertisement["channel"]), str(con)))
             self._send_covert_msg(advertisement, con)
     
-    def _route_probePath(self, probePath, incoming_connection):
-        logger.info("Routing probePath: %s coming from %s..." % (str(probePath), str(incoming_connection)))
-        self._init_channel(probePath["channel"])
-        incoming_peer = incoming_connection.get_peer_id() if incoming_connection != None else None
-        chain = base64.b64decode(bytes(probePath["chain"], "ascii"))    # decode chain nonce
-        
-        # return incoming barrier to sender
-        if not probePath["returning"]:
-            nonce = None
-            # search for hashchain
-            chain = self._find_nonce(chain, self.advertisement_routing_table[probePath["channel"]])
-            if chain and len(self.advertisement_routing_table[probePath["channel"]][chain]):
-                # shortest known path
-                nonce = str(base64.b64encode(self.advertisement_routing_table[probePath["channel"]][chain].peekitem(0)[0]), "ascii")
-            logger.debug("Answering probePath with '%s'..." % nonce if Flooding.settings["ACTIVE_PATH_PROBES"])
-            self._send_covert_msg(Message("%s_probePath" % self.__class__.__name__, {
-                "channel": probePath["channel"],
-                "chain": probePath["chain"],
-                "returning": True,
-                "nonce": nonce if Flooding.settings["ACTIVE_PATH_PROBES"],
-            }), incoming_connection)
-            return
-        
-        # handle returning barrier
-        
-        # add nonce to routing table if given (ACTIVE_PATH_PROBES at remote peer is true and remote peer did know an alternative path)
-        if probePath["nonce"]:
-            nonce = base64.b64decode(bytes(probePath["nonce"], "ascii"))    # decode nonce
-            (ordering, entry) = self._add_nonce(probePath["channel"], nonce, incoming_peer)
-        # remove incoming_peer from outstanding_path_probes (if it is still outstanding, ignore returning probePath message otherwise)
-        chain = self._find_nonce(chain, self.outstanding_path_probes[probePath["channel"]])
-        if chain and incoming_peer in self.outstanding_path_probes[probePath["channel"]][chain]:
-            self.outstanding_path_probes[probePath["channel"]][chain].discard(incoming_peer)
-            # all barriers returned: resume unadvertisement handling here
-            if not len(self.outstanding_path_probes[probePath["channel"]][chain]):
-                del self.outstanding_path_probes[probePath["channel"]][chain]   # cleanup
-                
-                alternatives = SortedList(key=functools.cmp_to_key(self._compare_nonces))
-                for nonce, peer_set in self.advertisement_routing_table[probePath["channel"]][chain].items():
-                    peer_set.discard(incoming_peer)
-                    if len(peer_set):
-                        alternatives.update(peer_set)
-                
-                
-                # REflood advertisement of alternative path
-                for peer_id in set(peer_id for peer_id in self.outstanding_reflood[probePath["channel"]][chain] if peer_id in self.connections):
-                    self._send_covert_msg(Message("%s_advertise" % self.__class__.__name__, {
-                        "channel": probePath["channel"],
-                        "nonce": str(base64.b64encode(self._hash(alternatives[0])), "ascii"),    # shortest known path
-                        "reflood": True
-                    }), self.connections[peer_id])
-                del self.outstanding_reflood[probePath["channel"]][chain]
-    
     def _route_unadvertise(self, unadvertisement, incoming_connection):
         logger.info("Routing unadvertisement: %s coming from %s..." % (str(unadvertisement), str(incoming_connection)))
         self._init_channel(unadvertisement["channel"])
@@ -225,9 +167,10 @@ class Flooding(Router):
         if not chain:
             logger.debug("Could not find hashchain in routing table, aborting unadvertise flooding...")
             return
-            
+        logger.info("Found chain '%s' for unadvertisement of channel '%s'..." % (str(base64.b64encode(chain), "ascii"), unadvertisement["channel"]))
+        
         # remove ALL nonces of this hashchain pointing to the incoming peer
-        alternatives = SortedList(key=functools.cmp_to_key(self._compare_nonces))
+        alternatives = set()
         was_known = False
         for nonce, peer_set in dict(self.advertisement_routing_table[unadvertisement["channel"]][chain].items()).items():
             if incoming_peer in peer_set:
@@ -248,24 +191,21 @@ class Flooding(Router):
         # remove peers we don't have connections to from our alternatives (we want to be on the safe side)
         alternatives.intersection_update(set(self.connections.keys()))
         
-        # send path probes (barriers) to all alternative paths and abort unadvertisement flooding (restart handling when all path probes returned)
+        # query reflooding in REFLOOD_DELAY seconds if we know alternatives and flood unadvertisements only to those peers we know alternative
+        # paths from (so that they can remove us as alternative). if those peers don't know the unadvertised path the flooding will end there
         if len(alternatives):
-            logger.debug("We know some alternative paths, synchronizing with those peers using path probes...")
-            # add incoming_peer to outstanding_reflood set
-            if chain not in self.outstanding_reflood[unadvertisement["channel"]]:
-                self.outstanding_reflood[unadvertisement["channel"]][chain] = set()
-            self.outstanding_reflood[unadvertisement["channel"]][chain].add(incoming_peer)
-            # send out path probes to all alternatives (incoming_peer will never be listed in those alternatives)
-            if chain not in self.outstanding_path_probes[unadvertisement["channel"]]:
-                self.outstanding_path_probes[unadvertisement["channel"]][chain] = set()
-            for peer_id in alternatives:
-                self._send_covert_msg(Message("%s_probePath" % self.__class__.__name__, {
-                    "channel": unadvertisement["channel"],
-                    "chain": unadvertisement["chain"],
-                    "returning": False,
-                }), self.connections[peer_id])
-                self.outstanding_path_probes[unadvertisement["channel"]][chain].add(peer_id)
-            # handling of this unadvertisements will continue if all barriers have returned
+            logger.info("We know some alternative paths, only flooding unadvertisement to those peers...")
+            for con in [con for peer_id, con in self.connections.items() if peer_id in alternatives]:
+                logger.info("Routing unadvertisement for channel '%s' to %s..." % (str(unadvertisement["channel"]), str(con)))
+                self._send_covert_msg(unadvertisement, con)
+            # start reflood timer
+            if chain in self.reflood_timers[unadvertisement["channel"]]:
+                self._abort_timer(self.reflood_timers[unadvertisement["channel"]][chain])
+            self.reflood_timers[unadvertisement["channel"]][chain] = self._add_timer(Flooding.settings["REFLOOD_DELAY"], {
+                "command": "Flooding_reflood",
+                "channel": unadvertisement["channel"],
+                "chain": chain,
+            })
             return
         
         # route unadvertise to all peers but incoming one
@@ -282,17 +222,14 @@ class Flooding(Router):
             self.connections[incoming_peer] = incoming_connection
         
         # update own routing table to include remote entries
-        for channel, _nonce in init["advertisements"].items():
+        for channel, nonce in init["advertisements"].items():
             self._init_channel(channel)
-            nonce = base64.b64decode(bytes(_nonce, "ascii"))        # decode nonce
-            (ordering, entry) = self._add_nonce(channel, nonce, incoming_peer)
-            if ordering == "new":      # flood shortest path further if this hashchain is new
-                # fake an advertisement message incoming from connection "incoming_connection"
-                self._route_covert_data(Message("%s_advertise" % self.__class__.__name__, {
-                    "channel": channel,
-                    "nonce": _nonce,
-                    "reflood": True
-                }), incoming_connection)
+            # fake an advertisement message incoming from connection "incoming_connection"
+            self._route_covert_data(Message("%s_advertise" % self.__class__.__name__, {
+                "channel": channel,
+                "nonce": nonce,
+                "reflood": True
+            }), incoming_connection)
     
     def _route_data(self, msg, incoming_connection=None):
         if incoming_connection:     # don't log locally published data (makes the log more clear)
@@ -315,8 +252,9 @@ class Flooding(Router):
             # route data further (we are not a master): select next hop based on shortest path for this hashchain
             nonce = base64.b64decode(bytes(msg["nonce"], "ascii"))    # decode nonce
             chain = self._find_nonce(nonce, self.advertisement_routing_table[msg["channel"]])
-            if chain and len(node_id = self.advertisement_routing_table[msg["channel"]][chain]):
-                node_id = self.advertisement_routing_table[msg["channel"]][chain].peekitem(0)[0]
+            if chain and len(self.advertisement_routing_table[msg["channel"]][chain]):
+                peer_set = self.advertisement_routing_table[msg["channel"]][chain].peekitem(0)[1]
+                node_id = next(iter(peer_set), None)    # randomly pick one item of our peer set and return None if it is empty
             if chain and node_id != incoming_peer and node_id in self.connections:
                 logger.info("Routing publish data to %s..." % self.connections[node_id])
                 self._send_msg(msg, self.connections[node_id])
@@ -365,7 +303,7 @@ class Flooding(Router):
             del self.connections[peer]
         
         # extract all nonces of this peer for which we have to unadvertise paths
-        unadvertise = {}
+        unadvertise = set()
         for channel in self.advertisement_routing_table:
             for chain in self.advertisement_routing_table[channel]:
                 for nonce in self.advertisement_routing_table[channel][chain]:
@@ -375,22 +313,14 @@ class Flooding(Router):
                             if Flooding.settings["ANONYMOUS_IDS"]:
                                 for x in range(SystemRandom().randint(0, 32)):
                                     nonce = self._hash(nonce)
-                            unadvertise[peer] = nonce
+                            unadvertise.add(nonce)
         
-        for nonce in unadvertise.values():
-            # unadvertise path to this peer
+        # unadvertise paths coming from this peer
+        for nonce in unadvertise:
             self._route_covert_data(Message("%s_unadvertise" % self.__class__.__name__, {
                 "channel": channel,
                 "chain": str(base64.b64encode(nonce), "ascii"),
-            }), con)
-            # and afterwards: force return all probePath barriers of this peer
-            self._route_covert_data(Message("%s_probePath" % self.__class__.__name__, {
-                "channel": channel,
-                "chain": str(base64.b64encode(nonce), "ascii"),
-                "returning": True,
-                "nonce": None,
-            }), con)
-        
+            }), con)        
     
     def _publish_command(self, command):
         self._init_channel(command["channel"])
@@ -460,6 +390,35 @@ class Flooding(Router):
         if command["callback"]:
             command["callback"](state)
     
+    def _Flooding_reflood_command(self, command):
+        channel = command["channel"]
+        chain = command["chain"]
+        del self.reflood_timers[channel][chain]
+        
+        if chain not in self.advertisement_routing_table[channel]:
+            logger.info("Not REflooding for chain '%s' on channel '%s', no alternatives found..." % (str(base64.b64encode(chain), "ascii"), channel))
+            return
+        
+        # calculate alternative paths
+        alternatives = SortedList(key=functools.cmp_to_key(self._compare_nonces))
+        for nonce in self.advertisement_routing_table[channel][chain]:
+            alternatives.add(nonce)
+        
+        if not len(alternatives):
+            logger.info("Not REflooding for chain '%s' on channel '%s', no alternatives found..." % (str(base64.b64encode(chain), "ascii"), channel))
+            return
+        
+        nonce = alternatives[0]     # shortest known path
+        
+        # reflood advertisement message to all peers but the ones it advertises the path from
+        for con in [con for peer_id, con in self.connections.items() if peer_id not in self.advertisement_routing_table[channel][chain][nonce]]:
+            logger.info("Sending REflood advertisement for channel '%s' to peer at %s..." % (channel, str(con)))
+            self._send_covert_msg(Message("%s_advertise" % self.__class__.__name__, {
+                "channel": channel,
+                "nonce": str(base64.b64encode(self._hash(nonce)), "ascii"),
+                "reflood": True
+            }), con)
+        
     def _Flooding_create_overlay_command(self, command):
         del self.subscription_timers[command["channel"]]
         return
