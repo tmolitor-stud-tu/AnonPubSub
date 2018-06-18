@@ -102,8 +102,6 @@ $(document).ready(function() {
 	sse.addEventListener("log", function(e) {
 		//extract log message and set data properties for filtering
 		var d = JSON.parse(e.data);
-		if(d.levelname == "DEBUG")	//TODO: DEBUG nicht mehr ignorieren
-			return;
 		var msg = $("<span>").text(`${d.asctime} [${pad(Array(7+1).join("\u00A0"), d.levelname)}] ${d.name} {${d.threadName}} ${d.filename}:${d.lineno}: ${d.message}`).append($("<br>"));
 		msg.attr("data-levelname", d.levelname);
 		msg.attr("data-module", d.module);
@@ -112,12 +110,14 @@ $(document).ready(function() {
 		
 		var scroll_down = $(".log")[0].scrollHeight - $(".log")[0].clientHeight <= $(".log")[0].scrollTop + 1;
 		$(".log").append(msg);
-		if(scroll_down)
-		{
-			//remove old elements in autoscroll mode
-			$(".log span").slice(0, -64).remove();
-			$(".log")[0].scrollTop = $(".log")[0].scrollHeight - $(".log")[0].clientHeight;
-		}
+		window.setTimeout(function() {
+			if(scroll_down)
+			{
+				//remove old elements in autoscroll mode
+				$(".log span").slice(0, -64).remove();
+				$(".log")[0].scrollTop = $(".log")[0].scrollHeight - $(".log")[0].clientHeight;
+			}
+		}, 0);
 	});
 	sse.addEventListener("new_node_id", function(e) {
 		var data = JSON.parse(e.data);
@@ -142,7 +142,7 @@ $(document).ready(function() {
 	$("#start").click(function() {
 		send_command({
 			"command": "start",
-			"router": "ACO",
+			"router": $("#router").val(),
 			"settings": {
 				"networking": {
 					"Connection": {
@@ -173,6 +173,12 @@ $(document).ready(function() {
 						"ANT_MAINTENANCE_TIME": self.DEFAULT_ROUNDS * self.ANT_ROUND_TIME,	//TODO: richtig berecnnen
 						//"ANT_MAINTENANCE_TIME": 0,
 						"AGGRESSIVE_TEARDOWN": false,
+					},
+					"Flooding": {
+						"ANONYMOUS_IDS": true,
+						"MAX_HASHES": 1000,
+						"SUBSCRIBE_DELAY": 2.0,
+						"ALWAYS_FLOOD_SHORTER_PATHS": true
 					}
 				}
 			}
@@ -210,6 +216,10 @@ $(document).ready(function() {
 })();</script>
 </head>
 <body>
+	<select id="router">
+		<option calue="ACO">ACO</option>
+		<option calue="Flooding" selected>Flooding</option>
+	</select>
 	<button id="start">Start</button>
 	<button id="stop">Stop</button>
 	<button id="subscribe">Subscribe</button>
@@ -221,14 +231,14 @@ $(document).ready(function() {
 		<div class="toolbar">
 			<button class="clear">Clear</button>
 			<label>Loglevel: <select class="levelname">
-				<option>DEBUG</option>
-				<option selected>INFO</option>
+				<option selected>DEBUG</option>
+				<option>INFO</option>
 				<option>WARNING</option>
 				<option>ERROR</option>
 			</select></label>
 			<div class="node"></div>
 		</div>
-		<div class="log INFO"></div>
+		<div class="log DEBUG"></div>
 	</div>
 </body>
 </html>

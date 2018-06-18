@@ -157,7 +157,7 @@ while True:
         subscribe(command, router, received)
     elif command["command"] == "dump":
         def cb(state):
-            event_queue.put({"type": "dump", "data": state})
+            event_queue.put({"type": "dump", "data": str(state)})
         if router:
             router.dump(cb)
     elif command["command"] == "_new_http_client":
