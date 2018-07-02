@@ -10,7 +10,7 @@ from .base import Router
 class Gossiping(Router):
     settings = {
         "INITIAL_TTL": 60,
-        "GOSSIPING_PEERS": 2
+        "GOSSIPING_PEERS": 2,
     }
     
     def __init__(self, node_id, queue):

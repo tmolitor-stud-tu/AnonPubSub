@@ -91,13 +91,26 @@ var send_command = function(command) {
 	});
 };
 
+var append_to_log = function(msg) {
+	var scroll_down = $(".log")[0].scrollHeight - $(".log")[0].clientHeight <= $(".log")[0].scrollTop + 1;
+	$(".log").append(msg);
+	window.setTimeout(function() {
+		if(scroll_down)
+		{
+			//remove old elements in autoscroll mode
+			$(".log span").slice(0, -64).remove();
+			$(".log")[0].scrollTop = $(".log")[0].scrollHeight - $(".log")[0].clientHeight;
+		}
+	}, 0);
+};
+
 $(document).ready(function() {
 	var sse = new EventSource("/events");
 	sse.addEventListener("open", function(e) {
-		$(".log").append($("<span>").addClass("ok").text("SSE connection established!").append($("<br>")));
+		append_to_log($("<span>").addClass("ok").text("SSE connection established!").append($("<br>")));
 	});
 	sse.addEventListener("error", function(e) {
-		$(".log").append($("<span>").addClass("error").text("SSE connection error, retrying!").append($("<br>")))
+		append_to_log($("<span>").addClass("error").text("SSE connection error, retrying!").append($("<br>")));
 	});
 	sse.addEventListener("log", function(e) {
 		//extract log message and set data properties for filtering
@@ -108,16 +121,7 @@ $(document).ready(function() {
 		msg.attr("data-name", d.name);
 		msg.attr("data-threadname", (d.threadName || "").split("::").pop());	//only the last element of thread id is used for filtering
 		
-		var scroll_down = $(".log")[0].scrollHeight - $(".log")[0].clientHeight <= $(".log")[0].scrollTop + 1;
-		$(".log").append(msg);
-		window.setTimeout(function() {
-			if(scroll_down)
-			{
-				//remove old elements in autoscroll mode
-				$(".log span").slice(0, -64).remove();
-				$(".log")[0].scrollTop = $(".log")[0].scrollHeight - $(".log")[0].clientHeight;
-			}
-		}, 0);
+		append_to_log(msg);
 	});
 	sse.addEventListener("new_node_id", function(e) {
 		var data = JSON.parse(e.data);
@@ -176,9 +180,20 @@ $(document).ready(function() {
 					},
 					"Flooding": {
 						"ANONYMOUS_IDS": true,
-						"MAX_HASHES": 1000,
+						"MAX_HASHES": 1000,         // this limits the maximum diameter of the underlay to this value
+						"REFLOOD_DELAY": 2.0,
+						"RANDOM_MASTER_PUBLISH": false,
 						"SUBSCRIBE_DELAY": 2.0,
-						"ALWAYS_FLOOD_SHORTER_PATHS": true
+						"AGGRESSIVE_TEARDOWN": false,
+						"AGGRESSIVE_RESUBSCRIBE": false,
+					},
+					"Randomwalk": {
+						"INITIAL_TTL": 60,
+						"INITIAL_WALKERS": 5,
+					}
+					"Gossiping": {
+						"INITIAL_TTL": 60,
+						"GOSSIPING_PEERS": 2,
 					}
 				}
 			}

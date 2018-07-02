@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import hashes
 # own classes
 from networking import Message
 from .base import Router
+from .active_paths_mixin import ActivePathsMixin
 
 
 class StrToClass(object):
@@ -22,35 +23,51 @@ class StrToClass(object):
     def __repr__(self):
         return self.s
 
-class Flooding(Router):
+class Flooding(Router, ActivePathsMixin):
     settings = {
         "ANONYMOUS_IDS": True,
         "MAX_HASHES": 1000,         # this limits the maximum diameter of the underlay to this value
-        "SUBSCRIBE_DELAY": 2.0,
-        "RANDOM_MASTER_PUBLISH": False,
         "REFLOOD_DELAY": 2.0,
+        "RANDOM_MASTER_PUBLISH": False,
+        "SUBSCRIBE_DELAY": 2.0,
+        "AGGRESSIVE_TEARDOWN": False,
+        "AGGRESSIVE_RESUBSCRIBE": False,
     }
     
     def __init__(self, node_id, queue):
+        # init parent class and mixins
         super(Flooding, self).__init__(node_id, queue)
+        self._ActivePathsMixin__init(Flooding.settings["AGGRESSIVE_TEARDOWN"])
+        
+        # init own data structures
+        self.edge_version = 0
         self.publishing = set()
         self.master = {}
         self.subscriber_ids = {}
+        self.subscribed_masters = {}
         self.subscription_timers = {}
         self.reflood_timers = {}
         self.advertisement_routing_table = {}
-        self.data_routing_table = {}
+        
         logger.info("%s router initialized..." % self.__class__.__name__)
     
     def _init_channel(self, channel):
+        self._ActivePathsMixin__init_channel(channel)
         if not channel in self.advertisement_routing_table:
             self.advertisement_routing_table[channel] = {}
-        if not channel in self.data_routing_table:
-            self.data_routing_table[channel] = {}
         if not channel in self.master:
             self.master[channel] = False
         if not channel in self.reflood_timers:
             self.reflood_timers[channel] = {}
+        if not channel in self.subscription_timers:
+            self.subscription_timers[channel] = {}
+        if not channel in self.subscribed_masters:
+            self.subscribed_masters[channel] = set()
+    
+    def stop(self):
+        logger.warning("Stopping router!")
+        super(Flooding, self).stop()
+        logger.warning("Router successfully stopped!");
     
     @functools.lru_cache(maxsize=4096)  # ~4 * settings["MAX_HASHES"] (power of 2 is faster)
     def _hash(self, nonce):
@@ -102,40 +119,141 @@ class Flooding(Router):
                 channel, "new", str(base64.b64encode(nonce), "ascii"), str(base64.b64encode(chain), "ascii")))
             return ("new", chain)        # hash chain of nonce was NOT already in routing table
     
+    def _canonize_active_path_identifier(self, channel, identifier):
+        identifier = base64.b64decode(bytes(identifier, "ascii"))
+        publishers = set(base64.b64decode(bytes(entry, "ascii")) for entry in self._ActivePathsMixin__get_known_publishers(channel))
+        retval = self._find_nonce(identifier, publishers)
+        if not retval:
+            retval = identifier
+        return str(base64.b64encode(retval), "ascii")
+    
     def _route_covert_data(self, msg, incoming_connection=None):
+        # manage hashchain routing tables
         if msg.get_type().endswith("_init"):
             return self._route_init(msg, incoming_connection)
         elif msg.get_type().endswith("_advertise"):
             return self._route_advertise(msg, incoming_connection)
         elif msg.get_type().endswith("_unadvertise"):
             return self._route_unadvertise(msg, incoming_connection)
+        # manage active paths
+        elif msg.get_type().endswith("_error"):
+            return self._route_error(msg, incoming_connection)
+        elif msg.get_type().endswith("_unsubscribe"):
+            return self._route_unsubscribe(msg, incoming_connection)
+        elif msg.get_type().endswith("_teardown"):
+            return self._route_teardown(msg, incoming_connection)
+        elif msg.get_type().endswith("_subscribe"):
+            return self._route_subscribe(msg, incoming_connection)
+    
+    def _route_subscribe(self, subscription, incoming_connection):
+        logger.info("Routing subscription: %s coming from %s..." % (str(subscription), str(incoming_connection)))
+        self._init_channel(subscription["channel"])
+        incoming_peer = incoming_connection.get_peer_id() if incoming_connection != None else None
+        chain = base64.b64decode(bytes(subscription["chain"], "ascii"))    # decode nonce
+        
+        # look up local hashchain identifier
+        chain = self._find_nonce(chain, self.advertisement_routing_table[subscription["channel"]])
+        
+        # extract shortest paths if possible and randomly pick a next hop
+        node_id = None
+        if chain and len(self.advertisement_routing_table[subscription["channel"]][chain]):
+            peer_set = self.advertisement_routing_table[subscription["channel"]][chain].peekitem(0)[1]
+            
+            # we are not the master (self.master is not set or shortest path doesn't point to us) --> calculate next hop
+            if not self.master[subscription["channel"]] or None not in peer_set:
+                if len(peer_set):
+                    # filter peer set (only route to peers we are still connected to and don't route message back to the peer we received it from)
+                    peer_set = set(node_id for node_id in peer_set if node_id != incoming_peer and node_id in self.connections)
+                    # randomly pick one item of our filtered peer_set and return None if it is empty
+                    node_id = next(iter(peer_set), None)
+        
+        self._ActivePathsMixin__activate_edge(
+            subscription["channel"],
+            subscription["subscriber"],
+            # this is the publisher we are activating the edge for
+            self._canonize_active_path_identifier(subscription["channel"], subscription["chain"]),
+            subscription["version"],
+            self.connections[node_id] if node_id else None,         # use None if the active path is starting here (we are the master publisher)
+            incoming_connection)                                    # incoming_connection is where the active edge should point to
+        
+        if node_id:
+            logger.info("Routing subscription to %s..." % self.connections[node_id])
+            self._send_covert_msg(subscription, self.connections[node_id])
+        elif not self.master[subscription["channel"]] or None not in peer_set:
+            logger.warning("Could not find peer to route subscription to and we are not the master this message is for!")
+        else:
+            logger.info("We are the master the subscription was sent to, so we are not going to route it further...")
+    
+    def _route_error(self, error, incoming_connection):
+        self._init_channel(error["channel"])
+        
+        # map publisher nonce to the identifier used by the ActivePathsMixin
+        error["publisher"] = self._canonize_active_path_identifier(error["channel"], error["publisher"])
+        
+        def recreate_overlay(error):
+            logger.warning("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(Flooding.settings["SUBSCRIBE_DELAY"])))
+            chain = base64.b64decode(bytes(error["publisher"], "ascii"))
+            chain = self._find_nonce(chain, self.advertisement_routing_table[error["channel"]])
+            if chain in self.subscribed_masters[error["channel"]]:
+                self.subscribed_masters[error["channel"]].discard(chain)
+            
+            # send subscribe request if needed (make sure we wait the full SUBSCRIBE_DELAY seconds until we subscribe)
+            if chain in self.subscription_timers[error["channel"]]:
+                self._abort_timer(self.subscription_timers[error["channel"]][chain])
+                del self.subscription_timers[error["channel"]][chain]
+            self.subscription_timers[error["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
+                "command": "Flooding_create_overlay",
+                "channel": error["channel"],
+                "chain": chain
+            })
+        
+        return self._ActivePathsMixin__route_error(error, incoming_connection, recreate_overlay)
+    
+    def _route_unsubscribe(self, unsubscribe, incoming_connection):
+        self._init_channel(unsubscribe["channel"])
+        return self._ActivePathsMixin__route_unsubscribe(unsubscribe, incoming_connection)
+    
+    def _route_teardown(self, teardown, incoming_connection):
+        self._init_channel(teardown["channel"])
+        
+        # map publisher nonce to the identifier used by the ActivePathsMixin
+        teardown["publisher"] = self._canonize_active_path_identifier(teardown["channel"], teardown["publisher"])
+
+        return self._ActivePathsMixin__route_teardown(teardown, incoming_connection)
     
     def _route_advertise(self, advertisement, incoming_connection):
         logger.info("Routing advertisement: %s coming from %s..." % (str(advertisement), str(incoming_connection)))
         self._init_channel(advertisement["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection != None else None
         nonce = base64.b64decode(bytes(advertisement["nonce"], "ascii"))    # decode nonce
+        chain = self._find_nonce(nonce, self.advertisement_routing_table[advertisement["channel"]])
         
         # prevent advertisement loop if this hashchain was already received from the same incoming_peer
-        chain = self._find_nonce(nonce, self.advertisement_routing_table[advertisement["channel"]])
         # hashchain known and already seen from this incoming peer --> abort flooding
         if chain and incoming_peer in set(
         peer_id for peer_set in self.advertisement_routing_table[advertisement["channel"]][chain].values() for peer_id in peer_set
         ):
-            logger.debug("This hashchain was already received from this peer, aborting advertise (re)flooding")
+            logger.debug("This hashchain was already received from exactly this peer, aborting advertise (re)flooding")
             return
         
-        # send subscribe request if needed (make sure we wait the full SUBSCRIBE_DELAY seconds until we subscribe)
-        #TODO: richtig machen (bei allen bekannten bzw. neuen mastern subscriben)
-        if advertisement["channel"] in self.subscription_timers:
-            self._abort_timer(self.subscription_timers[advertisement["channel"]])
-        self.subscription_timers[advertisement["channel"]] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
-            "command": "Flooding_create_overlay",
-            "channel": advertisement["channel"]
-        })
-        
         # now add nonce to routing table
-        (ordering, entry) = self._add_nonce(advertisement["channel"], nonce, incoming_peer)
+        (ordering, chain) = self._add_nonce(advertisement["channel"], nonce, incoming_peer)
+        
+        def start_subscription_process():
+            # send subscribe request if needed (make sure we wait the full SUBSCRIBE_DELAY seconds until we subscribe)
+            if advertisement["channel"] in self.subscriptions:
+                if chain in self.subscription_timers[advertisement["channel"]]:
+                    self._abort_timer(self.subscription_timers[advertisement["channel"]][chain])
+                    del self.subscription_timers[advertisement["channel"]][chain]
+                if chain not in self.subscribed_masters[advertisement["channel"]]:
+                    logger.info("Creating overlay for channel '%s' in %s seconds..." % (str(advertisement["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
+                    self.subscription_timers[advertisement["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
+                        "command": "Flooding_create_overlay",
+                        "channel": advertisement["channel"],
+                        "chain": chain
+                    })
+        if Flooding.settings["AGGRESSIVE_RESUBSCRIBE"]:
+            start_subscription_process()
         
         # abort REflooding if we already know this hashchain
         if advertisement["reflood"] and ordering != "new":
@@ -146,6 +264,9 @@ class Flooding(Router):
         if ordering == "longer":
             logger.debug("This path was longer, aborting advertise (re)flooding...")
             return
+        
+        if not Flooding.settings["AGGRESSIVE_RESUBSCRIBE"]:
+            start_subscription_process()
         
         # encode nonce again and update message with this new nonce
         nonce = self._hash(nonce)       # the path to our neighbor is one step further
@@ -240,7 +361,16 @@ class Flooding(Router):
         # if this is a publication to master publisher --> route it along the shortest path taken from advertisement_routing_table
         # to the master publisher indicated by nonce and skip normal data routing and subscription tests
         if msg.get_type().endswith("_publish"):
-            if self.master[msg["channel"]]:     # we are the master --> publish data on behalf of slave publisher
+            nonce = base64.b64decode(bytes(msg["nonce"], "ascii"))    # decode nonce
+            chain = self._find_nonce(nonce, self.advertisement_routing_table[msg["channel"]])
+            
+            # extract shortest paths if possible
+            peer_set = set()
+            if chain and len(self.advertisement_routing_table[msg["channel"]][chain]):
+                peer_set = self.advertisement_routing_table[msg["channel"]][chain].peekitem(0)[1]
+            
+            # we are the master (self.master is set and shortest path points to us) --> publish data on behalf of slave publisher
+            if self.master[msg["channel"]] and None in peer_set:
                 # send data to all subscribers (do not pass incoming_connection to _route_data() because we are publishing on behalf of a slave)
                 self._route_data(Message("%s_data" % self.__class__.__name__, {
                     "channel": msg["channel"],
@@ -249,41 +379,40 @@ class Flooding(Router):
                 # the publish message ends here
                 return
             
-            # route data further (we are not a master): select next hop based on shortest path for this hashchain
-            nonce = base64.b64decode(bytes(msg["nonce"], "ascii"))    # decode nonce
-            chain = self._find_nonce(nonce, self.advertisement_routing_table[msg["channel"]])
-            if chain and len(self.advertisement_routing_table[msg["channel"]][chain]):
-                peer_set = self.advertisement_routing_table[msg["channel"]][chain].peekitem(0)[1]
-                node_id = next(iter(peer_set), None)    # randomly pick one item of our peer set and return None if it is empty
-            if chain and node_id != incoming_peer and node_id in self.connections:
+            # route data further (we are not the master of this hashchain): select next hop based on shortest paths for this hashchain
+            node_id = None
+            if len(peer_set):
+                # filter peer set (only route to peers we are still connected to and don't route message back to the peer we received it from)
+                peer_set = set(node_id for node_id in peer_set if node_id != incoming_peer and node_id in self.connections)
+                # randomly pick one item of our filtered peer_set and return None if it is empty
+                node_id = next(iter(peer_set), None)
+            if node_id:
                 logger.info("Routing publish data to %s..." % self.connections[node_id])
                 self._send_msg(msg, self.connections[node_id])
             else:
-                logger.warning("Nonce not found while trying to route publish message to master publisher!")
+                logger.warning("Could not find peer to route message to while trying to route publish message to master publisher!")
             return
         
-        # TODO: normal data routing comes here (*OLD* code below)
-        return
-        
-        # inform own subscriber of new data
+        # route normal data messages along active paths to subscribers
+
         if msg["channel"] in self.subscriptions:
-            self.subscriptions[msg["channel"]](msg["data"])
+            self.subscriptions[msg["channel"]](msg["data"])        # inform own subscriber of new data
         
-        if not len(self.data_routing_table[msg["channel"]]):
-            logger.warning("No additional peers found, cannot route data further!")
+        # calculate list of next nodes to route a (data) messages to according to the active edges (and don't return our incoming peer here)
+        connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
+        
+        # sanity check
+        if not len(connections):
+            logger.debug("No peers with active edges found, cannot route data further!")
             return
         
-        # send out data to all peers in data routing table (excluding the incoming one)
-        connections = set()
-        for nonce, entry in self.data_routing_table[msg["channel"]].items():
-            if entry["peer"] in self.connections and entry["peer"] != incoming_peer:
-                connections.add(entry["peer"])
-        for peer in connections:
-            logger.info("Routing data to peer '%s'..." % peer)
-            self._send_msg(msg, self.connections[peer])
+        # route message to these nodes
+        for con in connections:
+            logger.info("Routing data to %s..." % str(con))
+            self._send_msg(msg, con)
     
     def _add_connection_command(self, command):
-        # no need to call parent class here, doing everything on our own
+        # no need to call parent class here, doing everything on our own (don't add new peer to self.connections here)
         con = command["connection"]
         peer = con.get_peer_id()
         # anonymize routing tables (we only need a mapping of shortest nonces to channels), and hash + encode nonce for transmission
@@ -296,11 +425,12 @@ class Flooding(Router):
         }), con)
     
     def _remove_connection_command(self, command):
-        # no need to call parent class here, doing everything on our own
-        con = command["connection"]
-        peer = con.get_peer_id()
-        if peer in self.connections:
-            del self.connections[peer]
+        # call parent class for common tasks
+        super(Flooding, self)._remove_connection_command(command)
+        peer = command["connection"].get_peer_id()
+        
+        # clean up all active paths using this peer (has to come first because of local hashchain lookup done in error routing)
+        self._ActivePathsMixin__cleanup(command["connection"])
         
         # extract all nonces of this peer for which we have to unadvertise paths
         unadvertise = set()
@@ -320,7 +450,7 @@ class Flooding(Router):
             self._route_covert_data(Message("%s_unadvertise" % self.__class__.__name__, {
                 "channel": channel,
                 "chain": str(base64.b64encode(nonce), "ascii"),
-            }), con)        
+            }), command["connection"])
     
     def _publish_command(self, command):
         self._init_channel(command["channel"])
@@ -353,24 +483,57 @@ class Flooding(Router):
             }))
     
     def _subscribe_command(self, command):
+        # initialize channel
         self._init_channel(command["channel"])
-        if command["channel"] not in self.subscriptions:
-            # make sure we wait the full SUBSCRIBE_DELAY seconds until we subscribe
-            if command["channel"] in self.subscription_timers:
-                self._abort_timer(self.subscription_timers[command["channel"]])
-            self.subscription_timers[command["channel"]] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
-                "command": "Flooding_create_overlay",
-                "channel": command["channel"]
-            })
         
-        # call parent class for common tasks
-        super(Flooding, self)._unsubscribe_command(command)
+        # ignore already subscribed channels (only update the callback)
+        if command["channel"] in self.subscriptions:
+            # call parent class for common tasks (update self.subscriptions)
+            return super(Flooding, self)._subscribe_command(command)
+        
+        # create new subscriber id for this channel if needed
+        if command["channel"] not in self.subscriber_ids:
+            self.subscriber_ids[command["channel"]] = str(uuid.uuid4()) if Flooding.settings["ANONYMOUS_IDS"] else self.node_id
+        
+        # subscribe to all masters for this channel
+        for chain in self.advertisement_routing_table[command["channel"]]:
+            # make sure we wait the full SUBSCRIBE_DELAY seconds until we subscribe to this master
+            if chain in self.subscription_timers[command["channel"]]:
+                self._abort_timer(self.subscription_timers[command["channel"]][chain])
+                del self.subscription_timers[command["channel"]][chain]
+            if chain not in self.subscribed_masters[command["channel"]]:
+                logger.info("Creating overlay for channel '%s' in %s seconds..." % (str(command["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
+                self.subscription_timers[command["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
+                    "command": "Flooding_create_overlay",
+                    "channel": command["channel"],
+                    "chain": chain
+                })
+        
+        # call parent class for common tasks (update self.subscriptions)
+        super(Flooding, self)._subscribe_command(command)
     
     def _unsubscribe_command(self, command):
+        # only do unsubscribe if needed
         if command["channel"] in self.subscriptions:
-            del self.subscriptions[command["channel"]]
+            # call parent class for common tasks
+            super(Flooding, self)._unsubscribe_command(command)
+            self._init_channel(command["channel"])
+            
+            # send out unsubscribe message to all masters we are subscribed to
+            self._route_covert_data(Message("%s_unsubscribe" % self.__class__.__name__, {
+                "channel": command["channel"],
+                "subscriber": self.subscriber_ids[command["channel"]]
+            }))
+            
+            # remove old subscriber id if not needed anymore
+            if command["channel"] in self.subscriber_ids:
+                del self.subscriber_ids[command["channel"]]
+            
+            # clear list of masters we subscribed to for this channel
+            self.subscribed_masters[command["channel"]] = set()
     
     def _dump_command(self, command):
+        # pretty printing for advertisement_routing_table
         advertisement_routing_table = {}
         for channel in self.advertisement_routing_table:
             advertisement_routing_table[channel] = {}
@@ -378,16 +541,17 @@ class Flooding(Router):
                 dict_contents = ["'%s': %s" % (str(base64.b64encode(nonce), "ascii"), str(self.advertisement_routing_table[channel][chain][nonce]))
                                  for nonce, peer_set in self.advertisement_routing_table[channel][chain].items()]
                 advertisement_routing_table[channel][str(base64.b64encode(chain), "ascii")] = StrToClass("SortedDict(%s)" % ", ".join(dict_contents))
+        
         state = {
-            "publishing": list(self.publishing),
+            "publishing": self.publishing,
             "master": self.master,
             "subscriber_ids": self.subscriber_ids,
             "subscription_timers": self.subscription_timers,
             "advertisement_routing_table": advertisement_routing_table,
-            "data_routing_table": self.data_routing_table
+            "ActivePathsMixin": self._ActivePathsMixin__dump_state(),
         }
         logger.info("INTERNAL STATE:\n%s" % str(state))
-        if command["callback"]:
+        if command and "callback" in command and command["callback"]:
             command["callback"](state)
     
     def _Flooding_reflood_command(self, command):
@@ -418,18 +582,32 @@ class Flooding(Router):
                 "nonce": str(base64.b64encode(self._hash(nonce)), "ascii"),
                 "reflood": True
             }), con)
-        
+    
     def _Flooding_create_overlay_command(self, command):
         del self.subscription_timers[command["channel"]]
-        return
         
-        # create new subscriber id for this channel if needed
-        if command["channel"] not in self.subscriber_ids:
-            self.subscriber_ids[command["channel"]] = str(uuid.uuid4()) if Flooding.settings["ANONYMOUS_IDS"] else self.node_id
+        # only create overlay if we (still) know a master publisher for this channel
+        chain = self._find_nonce(command["chain"], self.advertisement_routing_table[command["channel"]])
+        if not chain:
+            logger.warning("NOT creating overlay for channel '%s', no known master publisher for this channel..." % str(command["channel"]))
+            return
+        
+        logger.info("Creating overlay for channel '%s'..." % str(command["channel"]))
+        
+        # calculate edge version
+        self.edge_version += 1
+        
+        # anonymize chain nonce before sending out subscribe message (peers need to know only the corresponding hashchain, not the explicit nonce)
+        chain = command["chain"]
+        if Flooding.settings["ANONYMOUS_IDS"]:
+            for x in range(SystemRandom().randint(0, 32)):
+                chain = self._hash(chain)
         
         # send out subscribe message
         self._route_covert_data(Message("%s_subscribe" % self.__class__.__name__, {
             "channel": command["channel"],  # this would be the encrypted topic if a TTP was used
             "subscriber": self.subscriber_ids[command["channel"]],
+            "chain": str(base64.b64encode(chain), "ascii"),
+            "version": self.edge_version
         }))
     

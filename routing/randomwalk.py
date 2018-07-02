@@ -7,11 +7,10 @@ from networking import Message
 from .base import Router
 
 
-
 class Randomwalk(Router):
     settings = {
         "INITIAL_TTL": 60,
-        "INITIAL_WALKERS": 5
+        "INITIAL_WALKERS": 5,
     }
     
     def __init__(self, node_id, queue):

@@ -162,7 +162,7 @@ class Connection(object):
         #return str(self.addr)
         return str(self.peer_id)
     
-    def __str__(self):
+    def __repr__(self):
         return "Connection<%s@%s%s>" % (str(self.peer_id), str(self.instance_id), str(self.addr))
     
     # *** internal methods for connection initialisation ***
