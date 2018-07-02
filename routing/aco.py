@@ -237,6 +237,7 @@ class ACO(Router, ActivePathsMixin):
         
         # calculate list of next nodes to route a (data) messages to according to the active edges (and don't return our incoming peer here)
         connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
+        connections.update(self._get_probabilistic_forwarding_peers(msg["channel"], incoming_peer))
         
         # sanity check
         if not len(connections):
@@ -357,7 +358,7 @@ class ACO(Router, ActivePathsMixin):
         if command["channel"] in self.overlay_maintenance_timers:
             self._abort_timer(self.overlay_maintenance_timers[command["channel"]])
         
-        active_edges_present = self._ActivePathsMixin__edges_active(command["channel"], self.subscriber_ids[command["channel"]])
+        active_edges_present = self._ActivePathsMixin__active_edges_present(command["channel"], self.subscriber_ids[command["channel"]])
         
         # loop as long as we didn't reach DEFAULT_ROUNDS (use <= to wait for last activating ants if DEFAULT_ROUNDS % ACTIVATION_ROUNDS == 0)
         if command["round_count"] <= ACO.settings["DEFAULT_ROUNDS"]:

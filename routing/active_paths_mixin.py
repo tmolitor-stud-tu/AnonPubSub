@@ -66,11 +66,11 @@ class ActivePathsMixin(object):
     
     def __get_next_hops(self, channel, incoming_peer=None):
         # calculate list of next nodes to route a (data) messages to according to the active edges (and don't return our incoming peer here)
-        return [con for node_id, con in self.connections.items() if
+        return set(con for node_id, con in self.connections.items() if
                 node_id in set(itemgetter("peer")(entry) for entry in self.__active_edges[channel].values()) and
-                node_id != incoming_peer]
+                node_id != incoming_peer)
     
-    def __edges_active(self, channel, subscriber):
+    def __active_edges_present(self, channel, subscriber):
         return (subscriber in self.__reverse_edges[channel] and
         len(set(itemgetter("peer")(entry) for entry in self.__reverse_edges[channel][subscriber].values())))
     

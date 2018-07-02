@@ -1,4 +1,5 @@
 import uuid
+import numpy
 from datetime import datetime
 from operator import itemgetter
 from sortedcontainers import SortedList
@@ -15,11 +16,13 @@ class Router(object):
     stopped = Event()
     settings = {
         "OUTGOING_TIME": 1.0,
-        "TIMING_FACTOR": 2.0
+        "TIMING_FACTOR": 2.0,
+        "PROBABILISTIC_FORWARDING": 0.25,
     }
     
     # *** public interface ***
     def __init__(self, node_id, queue):
+        self.probabilistic_forwarding_peers = {}
         self.queue = queue
         self.node_id = node_id
         self.connections = {}
@@ -101,6 +104,20 @@ class Router(object):
             return getattr(self, func)(command)
         logger.error("Unknown routing command '%s' (%s), ignoring command!" % (command["command"], func))
         return None
+    
+    def _get_probabilistic_forwarding_peers(self, channel, ignore_peers=None):
+        if channel not in self.probabilistic_forwarding_peers:
+            self.probabilistic_forwarding_peers[channel] = set()
+        if not len(self.probabilistic_forwarding_peers[channel]):
+            if not (isinstance(ignore_peers, list) or isinstance(ignore_peers, set)):
+                ignore_peers = set(ignore_peers)
+            connections = [con for con in self.connections.values() if con.get_peer_id() not in ignore_peers]
+            self.probabilistic_forwarding_peers[channel] = set(numpy.random.choice(
+                connections,
+                size=round(len(connections) * Router.settings["PROBABILISTIC_FORWARDING"])
+            ))
+        logger.info("Probabilistic forwarding peers for channel '%s': %s..." % (str(channel), str(self.probabilistic_forwarding_peers[channel])))
+        return self.probabilistic_forwarding_peers[channel]
 
     # *** routing methods that should be overwritten by child classes ***
     def _route_covert_data(self, msg, incoming_connection=None):

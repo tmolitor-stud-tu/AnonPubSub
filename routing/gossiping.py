@@ -23,15 +23,15 @@ class Gossiping(Router):
             return
         
         if msg["channel"] in self.subscriptions:
-            self.subscriptions[msg["channel"]](msg["data"])        #inform own subscriber of new data
+            self.subscriptions[msg["channel"]](msg["data"])        # inform own subscriber of new data
         
         msg["ttl"] -= 1
         msg["nodes"].append(self.node_id)
-        connections = [key for key in self.connections if key not in msg["nodes"]]    #this does avoid loops
+        connections = [key for key in self.connections if key not in msg["nodes"]]    # this does avoid loops
         if not len(connections):
             logger.warning("No additional peers found, cannot route data further!")
             return
-        #use at most GOSSIPING_PEERS randomly selected peers to send our message to
+        # use at most GOSSIPING_PEERS randomly selected peers to send our message to
         connections = list(numpy.random.choice(
             connections,
             size=min(len(connections), Gossiping.settings["GOSSIPING_PEERS"])

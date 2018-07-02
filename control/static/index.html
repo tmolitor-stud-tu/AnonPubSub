@@ -163,7 +163,8 @@ $(document).ready(function() {
 				"routing": {
 					"Router": {
 						"OUTGOING_TIME": 1.0,
-						"TIMING_FACTOR": 2.0
+						"TIMING_FACTOR": 2.0,
+						"PROBABILISTIC_FORWARDING": 1,
 					},
 					"ACO": {
 						"ANONYMOUS_IDS": false,
@@ -190,7 +191,7 @@ $(document).ready(function() {
 					"Randomwalk": {
 						"INITIAL_TTL": 60,
 						"INITIAL_WALKERS": 5,
-					}
+					},
 					"Gossiping": {
 						"INITIAL_TTL": 60,
 						"GOSSIPING_PEERS": 2,

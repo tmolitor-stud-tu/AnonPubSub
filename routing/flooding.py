@@ -44,7 +44,6 @@ class Flooding(Router, ActivePathsMixin):
         self.publishing = set()
         self.master = {}
         self.subscriber_ids = {}
-        self.subscribed_masters = {}
         self.subscription_timers = {}
         self.reflood_timers = {}
         self.advertisement_routing_table = {}
@@ -61,8 +60,6 @@ class Flooding(Router, ActivePathsMixin):
             self.reflood_timers[channel] = {}
         if not channel in self.subscription_timers:
             self.subscription_timers[channel] = {}
-        if not channel in self.subscribed_masters:
-            self.subscribed_masters[channel] = set()
     
     def stop(self):
         logger.warning("Stopping router!")
@@ -194,8 +191,6 @@ class Flooding(Router, ActivePathsMixin):
             logger.warning("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(Flooding.settings["SUBSCRIBE_DELAY"])))
             chain = base64.b64decode(bytes(error["publisher"], "ascii"))
             chain = self._find_nonce(chain, self.advertisement_routing_table[error["channel"]])
-            if chain in self.subscribed_masters[error["channel"]]:
-                self.subscribed_masters[error["channel"]].discard(chain)
             
             # send subscribe request if needed (make sure we wait the full SUBSCRIBE_DELAY seconds until we subscribe)
             if chain in self.subscription_timers[error["channel"]]:
@@ -245,13 +240,12 @@ class Flooding(Router, ActivePathsMixin):
                 if chain in self.subscription_timers[advertisement["channel"]]:
                     self._abort_timer(self.subscription_timers[advertisement["channel"]][chain])
                     del self.subscription_timers[advertisement["channel"]][chain]
-                if chain not in self.subscribed_masters[advertisement["channel"]]:
-                    logger.info("Creating overlay for channel '%s' in %s seconds..." % (str(advertisement["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
-                    self.subscription_timers[advertisement["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
-                        "command": "Flooding_create_overlay",
-                        "channel": advertisement["channel"],
-                        "chain": chain
-                    })
+                logger.info("Trying to create overlay for channel '%s' in %s seconds..." % (str(advertisement["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
+                self.subscription_timers[advertisement["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
+                    "command": "Flooding_create_overlay",
+                    "channel": advertisement["channel"],
+                    "chain": chain
+                })
         if Flooding.settings["AGGRESSIVE_RESUBSCRIBE"]:
             start_subscription_process()
         
@@ -306,7 +300,11 @@ class Flooding(Router, ActivePathsMixin):
         
         # don't route unadvertise further if we didn't know the unadvertised path
         if not was_known:
-            logger.debug("We did not know a path to this incoming peer, aborting unadvertise flooding...")
+            logger.debug("We did not know a path to this incoming peer, aborting unadvertisement flooding...")
+            return
+        
+        if None in alternatives:
+            logger.debug("We are the master for this hashchain, aborting unadvertisement flooding...")
             return
         
         # remove peers we don't have connections to from our alternatives (we want to be on the safe side)
@@ -400,6 +398,7 @@ class Flooding(Router, ActivePathsMixin):
         
         # calculate list of next nodes to route a (data) messages to according to the active edges (and don't return our incoming peer here)
         connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
+        connections.update(self._get_probabilistic_forwarding_peers(msg["channel"], incoming_peer))
         
         # sanity check
         if not len(connections):
@@ -501,13 +500,12 @@ class Flooding(Router, ActivePathsMixin):
             if chain in self.subscription_timers[command["channel"]]:
                 self._abort_timer(self.subscription_timers[command["channel"]][chain])
                 del self.subscription_timers[command["channel"]][chain]
-            if chain not in self.subscribed_masters[command["channel"]]:
-                logger.info("Creating overlay for channel '%s' in %s seconds..." % (str(command["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
-                self.subscription_timers[command["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
-                    "command": "Flooding_create_overlay",
-                    "channel": command["channel"],
-                    "chain": chain
-                })
+            logger.info("Trying to create overlay for channel '%s' in %s seconds..." % (str(command["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
+            self.subscription_timers[command["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
+                "command": "Flooding_create_overlay",
+                "channel": command["channel"],
+                "chain": chain
+            })
         
         # call parent class for common tasks (update self.subscriptions)
         super(Flooding, self)._subscribe_command(command)
@@ -528,9 +526,6 @@ class Flooding(Router, ActivePathsMixin):
             # remove old subscriber id if not needed anymore
             if command["channel"] in self.subscriber_ids:
                 del self.subscriber_ids[command["channel"]]
-            
-            # clear list of masters we subscribed to for this channel
-            self.subscribed_masters[command["channel"]] = set()
     
     def _dump_command(self, command):
         # pretty printing for advertisement_routing_table
@@ -590,6 +585,10 @@ class Flooding(Router, ActivePathsMixin):
         chain = self._find_nonce(command["chain"], self.advertisement_routing_table[command["channel"]])
         if not chain:
             logger.warning("NOT creating overlay for channel '%s', no known master publisher for this channel..." % str(command["channel"]))
+            return
+        
+        if self._ActivePathsMixin__active_edges_present(command["channel"], self.subscriber_ids[command["channel"]]):
+            logger.info("NOT creating overlay for channel '%s', overlay already created..." % str(command["channel"]))
             return
         
         logger.info("Creating overlay for channel '%s'..." % str(command["channel"]))
