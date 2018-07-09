@@ -197,7 +197,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         error["publisher"] = self._canonize_active_path_identifier(error["channel"], error["publisher"])
         
         def recreate_overlay(error):
-            logger.warning("Recreating broken overlay for channel '%s' in %s seconds..." % (error["channel"], str(Flooding.settings["SUBSCRIBE_DELAY"])))
+            logger.warning("Recreating broken overlay for channel '%s' in %.3f seconds..." % (error["channel"], Flooding.settings["SUBSCRIBE_DELAY"]))
             chain = base64.b64decode(bytes(error["publisher"], "ascii"))
             chain = self._find_nonce(chain, self.advertisement_routing_table[error["channel"]])
             
@@ -249,7 +249,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                 if chain in self.subscription_timers[advertisement["channel"]]:
                     self._abort_timer(self.subscription_timers[advertisement["channel"]][chain])
                     del self.subscription_timers[advertisement["channel"]][chain]
-                logger.info("Trying to create overlay for channel '%s' in %s seconds..." % (str(advertisement["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
+                logger.info("Trying to create overlay for channel '%s' in %.3f seconds..." % (str(advertisement["channel"]), Flooding.settings["SUBSCRIBE_DELAY"]))
                 self.subscription_timers[advertisement["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
                     "_command": "Flooding__create_overlay",
                     "channel": advertisement["channel"],
@@ -464,13 +464,14 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         self._init_channel(command["channel"])
         if command["channel"] not in self.publishing:
             self.publishing.add(command["channel"])
-            if command["channel"] not in self.become_master_timers:     # only start timer once
-                delay = SystemRandom().uniform(Flooding.settings["MIN_BECOME_MASTER_DELAY"], Flooding.settings["MAX_BECOME_MASTER_DELAY"])
-                logger.info("Trying to become master publisher in %s seconds..." % str(delay))
-                self.become_master_timers[command["channel"]] = self._add_timer(delay, {
-                    "_command": "Flooding__become_master",
-                    "channel": command["channel"],
-                })
+            if not len(self.advertisement_routing_table[command["channel"]]):
+                if command["channel"] not in self.become_master_timers:     # only start timer once
+                    delay = SystemRandom().uniform(Flooding.settings["MIN_BECOME_MASTER_DELAY"], Flooding.settings["MAX_BECOME_MASTER_DELAY"])
+                    logger.info("Trying to become master publisher in %.3f seconds..." % delay)
+                    self.become_master_timers[command["channel"]] = self._add_timer(delay, {
+                        "_command": "Flooding__become_master",
+                        "channel": command["channel"],
+                    })
         
         # start sending out data
         if self.master[command["channel"]]:
@@ -482,20 +483,20 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         elif not len(self.advertisement_routing_table[command["channel"]]):
             if command["channel"] not in self.become_master_timers:     # only start timer once
                 delay = SystemRandom().uniform(Flooding.settings["MIN_BECOME_MASTER_DELAY"], Flooding.settings["MAX_BECOME_MASTER_DELAY"])
-                logger.info("Trying to become master publisher in %s seconds..." % str(delay))
+                logger.info("Trying to become master publisher in %.3f seconds..." % delay)
                 self.become_master_timers[command["channel"]] = self._add_timer(delay, {
                     "_command": "Flooding___become_master",
                     "channel": command["channel"],
                 })
         else:
-            master = self.advertisement_routing_table[command["channel"]].keys()[0]
+            master = list(self.advertisement_routing_table[command["channel"]].keys())[0]
             if Flooding.settings["RANDOM_MASTER_PUBLISH"]:
-                master = SystemRandom.choice(self.advertisement_routing_table[command["channel"]].keys())
+                master = SystemRandom.choice(list(self.advertisement_routing_table[command["channel"]].keys()))
             # send data to randomly choosen master publisher (choosing a new one for every message reduces message loss if one master fails)
             self._route_data(Message("%s_publish" % self.__class__.__name__, {
                 "channel": command["channel"],
                 "data": command["data"],
-                "nonce": master
+                "nonce": str(base64.b64encode(master), "ascii"),
             }))
     
     def _subscribe_command(self, command):
@@ -517,7 +518,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             if chain in self.subscription_timers[command["channel"]]:
                 self._abort_timer(self.subscription_timers[command["channel"]][chain])
                 del self.subscription_timers[command["channel"]][chain]
-            logger.info("Trying to create overlay for channel '%s' in %s seconds..." % (str(command["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
+            logger.info("Trying to create overlay for channel '%s' in %.3f seconds..." % (str(command["channel"]), Flooding.settings["SUBSCRIBE_DELAY"]))
             self.subscription_timers[command["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
                 "_command": "Flooding__create_overlay",
                 "channel": command["channel"],
@@ -629,7 +630,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         }))
     
     def __become_master_command(self, command):
-        del self.become_master_timers[command["channel"]]   # mark timer as fired so that it can be started again at a later time
+        del self.become_master_timers[command["channel"]]   # mark timer as fired so that it can be started again later
         
         # we are the first publisher --> flood underlay with advertisements (we are one of the masters now)
         if not len(self.advertisement_routing_table[command["channel"]]):
