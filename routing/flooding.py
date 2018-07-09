@@ -407,7 +407,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         
         # calculate list of next nodes to route a (data) messages to according to the active edges (and don't add our incoming peer here)
         connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
-        connections.update(self._ProbabilisticForwardingMixin__get_probabilistic_forwarding_peers(msg["channel"], incoming_peer))
+        connections.update(self._ProbabilisticForwardingMixin__get_additional_peers(msg["channel"], incoming_peer))
         
         # sanity check
         if not len(connections):
@@ -464,16 +464,13 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         self._init_channel(command["channel"])
         if command["channel"] not in self.publishing:
             self.publishing.add(command["channel"])
-            if command["channel"] not in self.become_master_timers:
-                self.become_master_timers[command["channel"]] = self._add_timer(
-                    SystemRandom.randrange(
-                        Flooding.settings["MIN_BECOME_MASTER_DELAY"], 
-                        Flooding.settings["MAX_BECOME_MASTER_DELAY"]
-                    ), {
-                        "_command": "Flooding__become_master",
-                        "channel": command["channel"],
-                    }
-                )
+            if command["channel"] not in self.become_master_timers:     # only start timer once
+                delay = SystemRandom().uniform(Flooding.settings["MIN_BECOME_MASTER_DELAY"], Flooding.settings["MAX_BECOME_MASTER_DELAY"])
+                logger.info("Trying to become master publisher in %s seconds..." % str(delay))
+                self.become_master_timers[command["channel"]] = self._add_timer(delay, {
+                    "_command": "Flooding__become_master",
+                    "channel": command["channel"],
+                })
         
         # start sending out data
         if self.master[command["channel"]]:
@@ -483,16 +480,13 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                 "data": command["data"],
             }))
         elif not len(self.advertisement_routing_table[command["channel"]]):
-            if command["channel"] not in self.become_master_timers:
-                self.become_master_timers[command["channel"]] = self._add_timer(
-                    SystemRandom.randrange(
-                        Flooding.settings["MIN_BECOME_MASTER_DELAY"], 
-                        Flooding.settings["MAX_BECOME_MASTER_DELAY"]
-                    ), {
-                        "_command": "Flooding___become_master",
-                        "channel": command["channel"],
-                    }
-                )
+            if command["channel"] not in self.become_master_timers:     # only start timer once
+                delay = SystemRandom().uniform(Flooding.settings["MIN_BECOME_MASTER_DELAY"], Flooding.settings["MAX_BECOME_MASTER_DELAY"])
+                logger.info("Trying to become master publisher in %s seconds..." % str(delay))
+                self.become_master_timers[command["channel"]] = self._add_timer(delay, {
+                    "_command": "Flooding___become_master",
+                    "channel": command["channel"],
+                })
         else:
             master = self.advertisement_routing_table[command["channel"]].keys()[0]
             if Flooding.settings["RANDOM_MASTER_PUBLISH"]:
@@ -634,14 +628,17 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             "version": self.edge_version
         }))
     
-    def __become_master_command():
-        del self.become_master_timers[command["channel"]]
+    def __become_master_command(self, command):
+        del self.become_master_timers[command["channel"]]   # mark timer as fired so that it can be started again at a later time
         
         # we are the first publisher --> flood underlay with advertisements (we are one of the masters now)
         if not len(self.advertisement_routing_table[command["channel"]]):
+            logger.info("Now becoming new master publisher...")
             self.master[command["channel"]] = True
             self._route_covert_data(Message("%s_advertise" % self.__class__.__name__, {
                 "channel": command["channel"],
                 "nonce": str(base64.b64encode(os.urandom(32)), "ascii"),
                 "reflood": False
             }))
+        else:
+            logger.info("Can not become master publisher, some other master was found meanwhile...")

@@ -243,7 +243,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         
         # calculate list of next nodes to route a (data) messages to according to the active edges (and don't add our incoming peer here)
         connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
-        connections.update(self._ProbabilisticForwardingMixin__get_probabilistic_forwarding_peers(msg["channel"], incoming_peer))
+        connections.update(self._ProbabilisticForwardingMixin__get_additional_peers(msg["channel"], incoming_peer))
         
         # sanity check
         if not len(connections):
