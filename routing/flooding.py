@@ -13,8 +13,10 @@ from cryptography.hazmat.primitives import hashes
 
 # own classes
 from networking import Message
+from utils import init_mixins, final
 from .base import Router
 from .active_paths_mixin import ActivePathsMixin
+from .probabilistic_forwarding_mixin import ProbabilisticForwardingMixin
 
 
 class StrToClass(object):
@@ -23,7 +25,9 @@ class StrToClass(object):
     def __repr__(self):
         return self.s
 
-class Flooding(Router, ActivePathsMixin):
+@final
+@init_mixins
+class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
     settings = {
         "ANONYMOUS_IDS": True,
         "MAX_HASHES": 1000,         # this limits the maximum diameter of the underlay to this value
@@ -32,17 +36,22 @@ class Flooding(Router, ActivePathsMixin):
         "SUBSCRIBE_DELAY": 2.0,
         "AGGRESSIVE_TEARDOWN": False,
         "AGGRESSIVE_RESUBSCRIBE": False,
+        "MIN_BECOME_MASTER_DELAY": 1.0,
+        "MAX_BECOME_MASTER_DELAY": 8.0,
+        "PROBABILISTIC_FORWARDING_FRACTION": 0.25,
     }
     
     def __init__(self, node_id, queue):
-        # init parent class and mixins
+        # init parent class and configure mixins
         super(Flooding, self).__init__(node_id, queue)
-        self._ActivePathsMixin__init(Flooding.settings["AGGRESSIVE_TEARDOWN"])
+        self._ActivePathsMixin__configure(Flooding.settings["AGGRESSIVE_TEARDOWN"])
+        self._ProbabilisticForwardingMixin__configure(Flooding.settings["PROBABILISTIC_FORWARDING_FRACTION"])
         
         # init own data structures
         self.edge_version = 0
         self.publishing = set()
         self.master = {}
+        self.become_master_timers = {}
         self.subscriber_ids = {}
         self.subscription_timers = {}
         self.reflood_timers = {}
@@ -197,7 +206,7 @@ class Flooding(Router, ActivePathsMixin):
                 self._abort_timer(self.subscription_timers[error["channel"]][chain])
                 del self.subscription_timers[error["channel"]][chain]
             self.subscription_timers[error["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
-                "command": "Flooding_create_overlay",
+                "_command": "Flooding__create_overlay",
                 "channel": error["channel"],
                 "chain": chain
             })
@@ -242,7 +251,7 @@ class Flooding(Router, ActivePathsMixin):
                     del self.subscription_timers[advertisement["channel"]][chain]
                 logger.info("Trying to create overlay for channel '%s' in %s seconds..." % (str(advertisement["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
                 self.subscription_timers[advertisement["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
-                    "command": "Flooding_create_overlay",
+                    "_command": "Flooding__create_overlay",
                     "channel": advertisement["channel"],
                     "chain": chain
                 })
@@ -321,7 +330,7 @@ class Flooding(Router, ActivePathsMixin):
             if chain in self.reflood_timers[unadvertisement["channel"]]:
                 self._abort_timer(self.reflood_timers[unadvertisement["channel"]][chain])
             self.reflood_timers[unadvertisement["channel"]][chain] = self._add_timer(Flooding.settings["REFLOOD_DELAY"], {
-                "command": "Flooding_reflood",
+                "_command": "Flooding__reflood",
                 "channel": unadvertisement["channel"],
                 "chain": chain,
             })
@@ -396,9 +405,9 @@ class Flooding(Router, ActivePathsMixin):
         if msg["channel"] in self.subscriptions:
             self.subscriptions[msg["channel"]](msg["data"])        # inform own subscriber of new data
         
-        # calculate list of next nodes to route a (data) messages to according to the active edges (and don't return our incoming peer here)
+        # calculate list of next nodes to route a (data) messages to according to the active edges (and don't add our incoming peer here)
         connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
-        connections.update(self._get_probabilistic_forwarding_peers(msg["channel"], incoming_peer))
+        connections.update(self._ProbabilisticForwardingMixin__get_probabilistic_forwarding_peers(msg["channel"], incoming_peer))
         
         # sanity check
         if not len(connections):
@@ -455,21 +464,35 @@ class Flooding(Router, ActivePathsMixin):
         self._init_channel(command["channel"])
         if command["channel"] not in self.publishing:
             self.publishing.add(command["channel"])
-            # we are the first publisher --> flood underlay with advertisements (we are one of the masters now)
-            if not len(self.advertisement_routing_table[command["channel"]]):
-                self.master[command["channel"]] = True
-                self._route_covert_data(Message("%s_advertise" % self.__class__.__name__, {
-                    "channel": command["channel"],
-                    "nonce": str(base64.b64encode(os.urandom(32)), "ascii"),
-                    "reflood": False
-                }))
+            if command["channel"] not in self.become_master_timers:
+                self.become_master_timers[command["channel"]] = self._add_timer(
+                    SystemRandom.randrange(
+                        Flooding.settings["MIN_BECOME_MASTER_DELAY"], 
+                        Flooding.settings["MAX_BECOME_MASTER_DELAY"]
+                    ), {
+                        "_command": "Flooding__become_master",
+                        "channel": command["channel"],
+                    }
+                )
+        
         # start sending out data
-        if self.master[command["channel"]] or not len(self.advertisement_routing_table[command["channel"]]):
+        if self.master[command["channel"]]:
             # send data to all subscribers
             self._route_data(Message("%s_data" % self.__class__.__name__, {
                 "channel": command["channel"],
                 "data": command["data"],
             }))
+        elif not len(self.advertisement_routing_table[command["channel"]]):
+            if command["channel"] not in self.become_master_timers:
+                self.become_master_timers[command["channel"]] = self._add_timer(
+                    SystemRandom.randrange(
+                        Flooding.settings["MIN_BECOME_MASTER_DELAY"], 
+                        Flooding.settings["MAX_BECOME_MASTER_DELAY"]
+                    ), {
+                        "_command": "Flooding___become_master",
+                        "channel": command["channel"],
+                    }
+                )
         else:
             master = self.advertisement_routing_table[command["channel"]].keys()[0]
             if Flooding.settings["RANDOM_MASTER_PUBLISH"]:
@@ -502,7 +525,7 @@ class Flooding(Router, ActivePathsMixin):
                 del self.subscription_timers[command["channel"]][chain]
             logger.info("Trying to create overlay for channel '%s' in %s seconds..." % (str(command["channel"]), str(Flooding.settings["SUBSCRIBE_DELAY"])))
             self.subscription_timers[command["channel"]][chain] = self._add_timer(Flooding.settings["SUBSCRIBE_DELAY"], {
-                "command": "Flooding_create_overlay",
+                "_command": "Flooding__create_overlay",
                 "channel": command["channel"],
                 "chain": chain
             })
@@ -549,7 +572,8 @@ class Flooding(Router, ActivePathsMixin):
         if command and "callback" in command and command["callback"]:
             command["callback"](state)
     
-    def _Flooding_reflood_command(self, command):
+    # *** the following commands are internal to Flooding ***
+    def __reflood_command(self, command):
         channel = command["channel"]
         chain = command["chain"]
         del self.reflood_timers[channel][chain]
@@ -578,7 +602,7 @@ class Flooding(Router, ActivePathsMixin):
                 "reflood": True
             }), con)
     
-    def _Flooding_create_overlay_command(self, command):
+    def __create_overlay_command(self, command):
         del self.subscription_timers[command["channel"]]
         
         # only create overlay if we (still) know a master publisher for this channel
@@ -610,3 +634,14 @@ class Flooding(Router, ActivePathsMixin):
             "version": self.edge_version
         }))
     
+    def __become_master_command():
+        del self.become_master_timers[command["channel"]]
+        
+        # we are the first publisher --> flood underlay with advertisements (we are one of the masters now)
+        if not len(self.advertisement_routing_table[command["channel"]]):
+            self.master[command["channel"]] = True
+            self._route_covert_data(Message("%s_advertise" % self.__class__.__name__, {
+                "channel": command["channel"],
+                "nonce": str(base64.b64encode(os.urandom(32)), "ascii"),
+                "reflood": False
+            }))

@@ -8,11 +8,15 @@ logger = logging.getLogger(__name__)
 
 # own classes
 from networking import Message
+from utils import init_mixins, final
 from .base import Router
 from .active_paths_mixin import ActivePathsMixin
+from .probabilistic_forwarding_mixin import ProbabilisticForwardingMixin
 
 
-class ACO(Router, ActivePathsMixin):
+@final
+@init_mixins
+class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
     settings = {
         "ANONYMOUS_IDS": True,
         "ANT_COUNT": 5,
@@ -25,12 +29,14 @@ class ACO(Router, ActivePathsMixin):
         #"ANT_MAINTENANCE_TIME": ACO.settings["DEFAULT_ROUNDS"] * ACO.settings["ANT_ROUND_TIME"],
         "ANT_MAINTENANCE_TIME": 0,
         "AGGRESSIVE_TEARDOWN": False,
+        "PROBABILISTIC_FORWARDING_FRACTION": 0.25,
     }
     
     def __init__(self, node_id, queue):
-        # init parent class and mixins
+        # init parent class and configure mixins
         super(ACO, self).__init__(node_id, queue)
-        self._ActivePathsMixin__init(ACO.settings["AGGRESSIVE_TEARDOWN"])
+        self._ActivePathsMixin__configure(ACO.settings["AGGRESSIVE_TEARDOWN"])
+        self._ProbabilisticForwardingMixin__configure(ACO.settings["PROBABILISTIC_FORWARDING_FRACTION"])
         
         # init own data structures
         self.subscriber_ids = {}
@@ -41,7 +47,7 @@ class ACO(Router, ActivePathsMixin):
         self.publishers_seen = {}
         self.overlay_creation_timers = {}
         self.overlay_maintenance_timers = {}
-        self._add_timer(ACO.settings["EVAPORATION_TIME"], {"command": "ACO_evaporation"})
+        self._add_timer(ACO.settings["EVAPORATION_TIME"], {"_command": "ACO__evaporation"})
         
         logger.info("%s router initialized..." % self.__class__.__name__)
     
@@ -104,7 +110,7 @@ class ACO(Router, ActivePathsMixin):
             if error["channel"] in self.overlay_maintenance_timers:
                 self._abort_timer(self.overlay_maintenance_timers[error["channel"]])
             self.overlay_creation_timers[error["channel"]] = self._add_timer(ACO.settings["ANT_ROUND_TIME"], {
-                "command": "ACO_create_overlay",
+                "_command": "ACO__create_overlay",
                 "channel": error["channel"],
                 "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
                 "retry": 0
@@ -141,7 +147,7 @@ class ACO(Router, ActivePathsMixin):
                     if publish["channel"] in self.overlay_maintenance_timers:
                         self._abort_timer(self.overlay_maintenance_timers[publish["channel"]])
                     self.overlay_creation_timers[publish["channel"]] = self._add_timer(ACO.settings["ANT_ROUND_TIME"], {
-                        "command": "ACO_create_overlay",
+                        "_command": "ACO__create_overlay",
                         "channel": publish["channel"],
                         "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
                         "retry": 0
@@ -189,7 +195,7 @@ class ACO(Router, ActivePathsMixin):
             # update pheromones on edge to incoming node, serialize pheromones write access through command queue
             if ant["channel"] not in self.publishing and incoming_connection:   # ant didn't start its way here --> put pheromones on incoming edge
                 self._call_command({
-                    "command": "ACO_update_pheromones",
+                    "_command": "ACO__update_pheromones",
                     "channel": ant["channel"],
                     "node": incoming_peer,
                     "pheromones": ant["pheromones"]
@@ -235,9 +241,9 @@ class ACO(Router, ActivePathsMixin):
         if msg["channel"] in self.subscriptions:
             self.subscriptions[msg["channel"]](msg["data"])        # inform own subscriber of new data
         
-        # calculate list of next nodes to route a (data) messages to according to the active edges (and don't return our incoming peer here)
+        # calculate list of next nodes to route a (data) messages to according to the active edges (and don't add our incoming peer here)
         connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
-        connections.update(self._get_probabilistic_forwarding_peers(msg["channel"], incoming_peer))
+        connections.update(self._ProbabilisticForwardingMixin__get_probabilistic_forwarding_peers(msg["channel"], incoming_peer))
         
         # sanity check
         if not len(connections):
@@ -277,7 +283,7 @@ class ACO(Router, ActivePathsMixin):
         
         logger.info("Creating overlay for channel '%s'..." % command["channel"])
         self._call_command({
-            "command": "ACO_create_overlay",
+            "_command": "ACO__create_overlay",
             "channel": command["channel"],
             "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
             "retry": 0
@@ -337,7 +343,7 @@ class ACO(Router, ActivePathsMixin):
             command["callback"](state)
     
     # *** the following commands are internal to ACO ***
-    def _ACO_update_pheromones_command(self, command):
+    def __update_pheromones_command(self, command):
         if command["channel"] not in self.pheromones:
             logger.error("Unknown channel '%s' while updating pheromones, skipping update!" % command["channel"])
         else:
@@ -346,14 +352,14 @@ class ACO(Router, ActivePathsMixin):
             self.pheromones[command["channel"]][command["node"]] += command["pheromones"]
             logger.debug("Pheromones updated: %s" % str(self.pheromones))
     
-    def _ACO_evaporation_command(self, command):
+    def __evaporation_command(self, command):
         for channel in self.pheromones:
             for node_id in self.pheromones[channel]:
                 self.pheromones[channel][node_id] *= ACO.settings["EVAPORATION_FACTOR"]
         logger.debug("Pheromones evaporated: %s" % str(self.pheromones))
-        self._add_timer(ACO.settings["EVAPORATION_TIME"], {"command": "ACO_evaporation"})   # call this command again in EVAPORATION_TIME seconds
+        self._add_timer(ACO.settings["EVAPORATION_TIME"], {"_command": "ACO__evaporation"})   # call this command again in EVAPORATION_TIME seconds
     
-    def _ACO_create_overlay_command(self, command):
+    def __create_overlay_command(self, command):
         # we are (re)creating the overlay from scratch, abort maintenance timer
         if command["channel"] in self.overlay_maintenance_timers:
             self._abort_timer(self.overlay_maintenance_timers[command["channel"]])
@@ -366,7 +372,7 @@ class ACO(Router, ActivePathsMixin):
             
             # call us again in ANT_ROUND_TIME seconds
             self.overlay_creation_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_ROUND_TIME"], {
-                "command": "ACO_create_overlay",
+                "_command": "ACO__create_overlay",
                 "channel": command["channel"],
                 "round_count": command["round_count"] + 1,
                 "retry": command["retry"]
@@ -387,14 +393,14 @@ class ACO(Router, ActivePathsMixin):
             if ACO.settings["ANT_MAINTENANCE_TIME"]:
                 # call maintain overlay command in ANT_MAINTENANCE_TIME seconds
                 self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_MAINTENANCE_TIME"], {
-                    "command": "ACO_maintain_overlay",
+                    "_command": "ACO__maintain_overlay",
                     "channel": command["channel"],
                     # TODO: do fixed ttl values destroy the ant optimisation?
                     "ttl": ACO.settings["DEFAULT_ROUNDS"],      # bigger ttl to find new publishers (fixed to this value)
                     "round_count": 1    # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
                 })
     
-    def _ACO_maintain_overlay_command(self, command):
+    def __maintain_overlay_command(self, command):
         if command["round_count"] <= ACO.settings["ACTIVATION_ROUNDS"]:
             # don't send out maintenance ants if overlay creation is in progress
             if command["channel"] in self.overlay_creation_timers:
@@ -404,7 +410,7 @@ class ACO(Router, ActivePathsMixin):
             
             # call us again in ANT_ROUND_TIME seconds
             self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_ROUND_TIME"], {
-                "command": "ACO_maintain_overlay",
+                "_command": "ACO__maintain_overlay",
                 "channel": command["channel"],
                 "ttl": ttl,
                 "round_count": command["round_count"] + 1,
@@ -413,7 +419,7 @@ class ACO(Router, ActivePathsMixin):
             logger.info("Next overlay maintenance in %d seconds..." % ACO.settings["ANT_MAINTENANCE_TIME"])
             # call us again in ANT_MAINTENANCE_TIME seconds
             self.overlay_maintenance_timers[command["channel"]] = self._add_timer(ACO.settings["ANT_MAINTENANCE_TIME"], {
-                "command": "ACO_maintain_overlay",
+                "_command": "ACO__maintain_overlay",
                 "channel": command["channel"],
                 # TODO: do fixed ttl values destroy the ant optimisation?
                 "ttl": ACO.settings["DEFAULT_ROUNDS"],      # bigger ttl to find new publishers (fixed to this value)

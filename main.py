@@ -105,9 +105,9 @@ while True:
     except Empty as err:
         #logger.debug("main command queue empty")
         continue
-    if command["command"][:1] != "_":       # don't log internal commands
+    if command["_command"][:1] != "_":       # don't log internal commands
         logger.info("Got GUI command: %s" % str(command))
-    if command["command"] == "start":
+    if command["_command"] == "start":
         if not router:
             # try to determine router class
             try:
@@ -132,7 +132,7 @@ while True:
         else:
             logger.error("Cannot start new router '%s': old router still initialized" % str(command["router"]))
             event_queue.put({"type": "router_already_initialized", "data": {"new_router": command["router"], "old_router": router.__class__.__name__}})
-    elif command["command"] == "stop":
+    elif command["_command"] == "stop":
         if router:
             router.stop()
             router = None
@@ -140,27 +140,27 @@ while True:
         queue = None
         to_publish = {}
         event_queue.put("stop_complete")
-    elif command["command"] == "reset":
+    elif command["_command"] == "reset":
         event_queue.put("reset_pending")
         cleanup_and_exit(0)     # the startup script will restart this node after a few seconds
-    elif command["command"] == "connect":
+    elif command["_command"] == "connect":
         if router:  # router and network are initialized at once, if we have no router our network is down, too
             networking.Connection.connect_to(command["addr"])
             event_queue.put({"type": "connection_sequence_started", "data": {"addr": command["addr"], "status": "ok"}})
         else:
             logger.error("Cannot connect to peer at %s: network not initialized!" % str(command["addr"]))
             event_queue.put({"type": "connection_sequence_started", "data": {"addr": command["addr"], "status": "error", "error": "router uninitialized"}})
-    elif command["command"] == "publish":
+    elif command["_command"] == "publish":
         to_publish[command["channel"]] = 0
         event_queue.put({"type": "published", "data": {"channel": command["channel"]}})
-    elif command["command"] == "subscribe":
+    elif command["_command"] == "subscribe":
         subscribe(command, router, received)
-    elif command["command"] == "dump":
+    elif command["_command"] == "dump":
         def cb(state):
             event_queue.put({"type": "dump", "data": str(state)})
         if router:
             router.dump(cb)
-    elif command["command"] == "_new_http_client":
+    elif command["_command"] == "_new_http_client":
         event_queue.put({"type": "new_node_id", "data": {"node_id": node_id}})
     else:
         logger.error("Ignoring unknown GUI command: %s" % str(command))

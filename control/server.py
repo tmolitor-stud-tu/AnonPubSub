@@ -48,7 +48,7 @@ class Server(object):
     @cherrypy.expose
     def events(self):
         cherrypy.response.headers["Content-Type"] = "text/event-stream"
-        self.command_queue.put({"command": "_new_http_client"})
+        self.command_queue.put({"_command": "_new_http_client"})
         def content():
             if self.in_generator:
                 self.event_queue.put(None)  # wakeup and stop OLD events generator function

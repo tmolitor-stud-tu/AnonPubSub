@@ -1,5 +1,4 @@
 import uuid
-import numpy
 from datetime import datetime
 from operator import itemgetter
 from sortedcontainers import SortedList
@@ -17,12 +16,10 @@ class Router(object):
     settings = {
         "OUTGOING_TIME": 1.0,
         "TIMING_FACTOR": 2.0,
-        "PROBABILISTIC_FORWARDING": 0.25,
     }
     
     # *** public interface ***
     def __init__(self, node_id, queue):
-        self.probabilistic_forwarding_peers = {}
         self.queue = queue
         self.node_id = node_id
         self.connections = {}
@@ -47,7 +44,7 @@ class Router(object):
     def subscribe(self, channel, callback):
         logger.info("Subscribing for data on channel '%s'..." % str(channel))
         self.queue.put({
-            "command": "subscribe",
+            "_command": "subscribe",
             "channel": channel,
             "callback": callback
         })
@@ -55,14 +52,14 @@ class Router(object):
     def unsubscribe(self, channel):
         logger.info("Unsubscribing channel '%s'..." % str(channel))
         self.queue.put({
-            "command": "unsubscribe",
+            "_command": "unsubscribe",
             "channel": channel,
         })
     
     def publish(self, channel, data):
         logger.debug("Publishing data on channel '%s'..." % str(channel))
         self.queue.put({
-            "command": "publish",
+            "_command": "publish",
             "channel": channel,
             "data": data
         })
@@ -70,7 +67,7 @@ class Router(object):
     # this dumps internal data structures of the child class to logger if implemented
     def dump(self, callback=None):
         self.queue.put({
-            "command": "dump",
+            "_command": "dump",
             "callback": callback
         })
     
@@ -99,26 +96,13 @@ class Router(object):
             self.timers_condition.notify()      # notify timers thread of changes
     
     def _call_command(self, command):
-        func = "_%s_command" % command["command"]       # this is the method name we have to call on self to process the command
+        # determine the method name we have to call on self to process the command
+        func = "_%s_command" % command["_command"]
         if hasattr(self, func):
             return getattr(self, func)(command)
         logger.error("Unknown routing command '%s' (%s), ignoring command!" % (command["command"], func))
         return None
     
-    def _get_probabilistic_forwarding_peers(self, channel, ignore_peers=None):
-        if channel not in self.probabilistic_forwarding_peers:
-            self.probabilistic_forwarding_peers[channel] = set()
-        if not len(self.probabilistic_forwarding_peers[channel]):
-            if not (isinstance(ignore_peers, list) or isinstance(ignore_peers, set)):
-                ignore_peers = set(ignore_peers)
-            connections = [con for con in self.connections.values() if con.get_peer_id() not in ignore_peers]
-            self.probabilistic_forwarding_peers[channel] = set(numpy.random.choice(
-                connections,
-                size=round(len(connections) * Router.settings["PROBABILISTIC_FORWARDING"])
-            ))
-        logger.info("Probabilistic forwarding peers for channel '%s': %s..." % (str(channel), str(self.probabilistic_forwarding_peers[channel])))
-        return self.probabilistic_forwarding_peers[channel]
-
     # *** routing methods that should be overwritten by child classes ***
     def _route_covert_data(self, msg, incoming_connection=None):
         pass
@@ -141,12 +125,12 @@ class Router(object):
             del self.last_outgoing_time[peer]
     
     def _covert_message_received_command(self, command):
-        if command["message"].get_type().startswith(self.__class__.__name__):   #ignore messages from other routers
-            self._route_covert_data(command["message"], command["connection"])
+        # covert messages and uncovert messages are handled the same (only one part of the called method name differs)
+        return self.__route("covert_data", command["message"], command["connection"])
     
     def _message_received_command(self, command):
-        if command["message"].get_type().startswith(self.__class__.__name__):   #ignore messages from other routers
-            self._route_data(command["message"], command["connection"])
+        # covert messages and uncovert messages are handled the same (only one part of the called method name differs)
+        return self.__route("data", command["message"], command["connection"])
     
     def _subscribe_command(self, command):
         self.subscriptions[command["channel"]] = command["callback"]
@@ -163,12 +147,24 @@ class Router(object):
         logger.error("This router does not support dumping of its internal state!")
     
     # *** internal methods, DON'T touch from child classes ***
+    def __route(self, messagetype, message, connection):
+        # ignore messages from unknown namespaces
+        func = "_route_%s" % messagetype        # main class namespace
+        if message.get_type().startswith(self.__class__.__name__) and hasattr(self, func):
+            getattr(self, func)(message, connection)
+        else:
+            # iterate over all mixins and try to find mixin responsible for routing this message
+            for mixin in set(base.__name__ for base in self.__class__.__bases__ if base.__name__.endswith("Mixin")):
+                func = "_%s__route_%s" % (mixin, messagetype)   # mixin namespace
+                if message.get_type().startswith(mixin) and hasattr(self, func):
+                    getattr(self, func)(message, connection)
+    
     def __outgoing(self, msg_type, msg, con):
         # no locking required in this method since we are only called from _routing thread
         
         # use "Router__real_send" as reference to our __real_send_command() because of name mangling semantics of double underscore
         # (those methods cannot accidentally be overwritten from child)
-        command = {"command": "Router__real_send", "type": msg_type, "message": msg, "connection": con}
+        command = {"_command": "Router__real_send", "type": msg_type, "message": msg, "connection": con}
         
         # calculate next send time and update timestamps
         peer = con.get_peer_id()
@@ -238,7 +234,7 @@ class Router(object):
             except Empty as err:
                 logger.debug("routing queue empty")
                 continue
-            logger.debug("got routing command: %s" % command["command"])
+            logger.debug("got routing command: %s" % command["_command"])
             self._call_command(command)
             self.queue.task_done()
         logger.debug("routing thread got stop signal, terminating all connections...")

@@ -129,7 +129,7 @@ class Connection(object):
                     del Connection.instances[str(self.addr)]
             if self.connection_state == "ESTABLISHED":
                 Connection.router_queue.put({
-                    "command": "remove_connection",
+                    "_command": "remove_connection",
                     "connection": self
                 })
         if self.pinger_thread and self.pinger_thread != current_thread():
@@ -197,7 +197,7 @@ class Connection(object):
         self.connection_state = "ESTABLISHED"
         self.reconnect_try = 0  # connection successful, reset reconnection counter
         Connection.router_queue.put({
-            "command": "add_connection",
+            "_command": "add_connection",
             "connection": self
         })
         self.pinger_thread = Thread(name="local::"+Connection.node_id+"::_pinger", target=self._pinger)
@@ -243,7 +243,7 @@ class Connection(object):
                             self.covert_messages_received = covert_msg["_covert_messages_counter"]
                             del covert_msg["_covert_messages_counter"]      # this is only internal, do not expose it to routers or filters
                             if not filters.covert_msg_incoming(covert_msg, self):       # call filters framework
-                                Connection.router_queue.put({"command": "covert_message_received", "connection": self, "message": covert_msg})
+                                Connection.router_queue.put({"_command": "covert_message_received", "connection": self, "message": covert_msg})
                     # send out ack
                     ack_msg = Message("_ack", {
                         # covert_messages_counter in network byte order (big endian) coded to hex (this is a constant length string)
@@ -262,7 +262,7 @@ class Connection(object):
                             self.covert_msg_queue.popleft()
                 else:
                     if not filters.msg_incoming(msg, self):     # call filters framework
-                        Connection.router_queue.put({"command": "message_received", "connection": self, "message": msg})
+                        Connection.router_queue.put({"_command": "message_received", "connection": self, "message": msg})
     
     def _reconnect(self):
         # try to reconnect after (PING_INTERVAL * MAX_MISSING_PINGS) + random(0, 2) seconds

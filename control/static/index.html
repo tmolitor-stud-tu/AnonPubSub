@@ -70,11 +70,11 @@ var pad = function(pad, str, padLeft) {
 	else
 		return (str + pad).substring(0, pad.length);
 }
-var send_command = function(command) {
+var send_command = function(command, data) {
 	return $.ajax({
 		type: "POST",
 		url: "/command",
-		data: JSON.stringify(command),
+		data: JSON.stringify($.extend({}, data || {}, {"_command": command})),
 		processData: false,
 		contentType: "application/json; charset=utf-8",
 		dataType: "text"
@@ -111,6 +111,8 @@ $(document).ready(function() {
 	});
 	sse.addEventListener("error", function(e) {
 		append_to_log($("<span>").addClass("error").text("SSE connection error, retrying!").append($("<br>")));
+		sse.close();
+		sse = new EventSource("/events");
 	});
 	sse.addEventListener("log", function(e) {
 		//extract log message and set data properties for filtering
@@ -144,8 +146,7 @@ $(document).ready(function() {
 	
 	//settings window
 	$("#start").click(function() {
-		send_command({
-			"command": "start",
+		send_command("start", {
 			"router": $("#router").val(),
 			"settings": {
 				"networking": {
@@ -164,7 +165,6 @@ $(document).ready(function() {
 					"Router": {
 						"OUTGOING_TIME": 1.0,
 						"TIMING_FACTOR": 2.0,
-						"PROBABILISTIC_FORWARDING": 1,
 					},
 					"ACO": {
 						"ANONYMOUS_IDS": false,
@@ -178,6 +178,7 @@ $(document).ready(function() {
 						"ANT_MAINTENANCE_TIME": self.DEFAULT_ROUNDS * self.ANT_ROUND_TIME,	//TODO: richtig berecnnen
 						//"ANT_MAINTENANCE_TIME": 0,
 						"AGGRESSIVE_TEARDOWN": false,
+						"PROBABILISTIC_FORWARDING_FRACTION": 0.25,
 					},
 					"Flooding": {
 						"ANONYMOUS_IDS": true,
@@ -187,6 +188,7 @@ $(document).ready(function() {
 						"SUBSCRIBE_DELAY": 2.0,
 						"AGGRESSIVE_TEARDOWN": false,
 						"AGGRESSIVE_RESUBSCRIBE": false,
+						"PROBABILISTIC_FORWARDING_FRACTION": 0.25,
 					},
 					"Randomwalk": {
 						"INITIAL_TTL": 60,
@@ -201,32 +203,25 @@ $(document).ready(function() {
 		});
 	});
 	$("#stop").click(function() {
-		send_command({
-			"command": "stop"
-		});
+		send_command("stop");
 	});
 	$("#subscribe").click(function() {
-		send_command({
-			"command": "subscribe",
+		send_command("subscribe", {
 			"channel": "test"
 		});
 	});
 	$("#publish").click(function() {
-		send_command({
-			"command": "publish",
+		send_command("publish", {
 			"channel": "test"
 		});
 	});
 	$("#connect").click(function() {
-		send_command({
-			"command": "connect",
+		send_command("connect", {
 			"addr": $("#addr").val()
 		});
 	});
 	$("#dump").click(function() {
-		send_command({
-			"command": "dump",
-		});
+		send_command("dump");
 	});
 });
 })();</script>
@@ -235,6 +230,8 @@ $(document).ready(function() {
 	<select id="router">
 		<option calue="ACO">ACO</option>
 		<option calue="Flooding" selected>Flooding</option>
+		<option calue="Randomwalk">Randomwalk</option>
+		<option calue="Gossiping">Gossiping</option>
 	</select>
 	<button id="start">Start</button>
 	<button id="stop">Stop</button>

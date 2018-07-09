@@ -7,11 +7,14 @@ from networking import Message
 
 
 class ActivePathsMixin(object):
-    def __init(self, aggressive_teardown):
-        self.__aggressive_teardown = aggressive_teardown
+    def __init__(self, *args, **kwargs):
+        self.__aggressive_teardown = False
         self.__active_edges = {}
         # needed to send out error messages when needed and to know if overlay is established
         self.__reverse_edges = {}
+    
+    def __configure(self, aggressive_teardown):
+        self.__aggressive_teardown = aggressive_teardown
     
     def __dump_state(self):
         return {
