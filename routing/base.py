@@ -97,10 +97,10 @@ class Router(object):
     
     def _call_command(self, command):
         # determine the method name we have to call on self to process the command
-        func = "_%s_command" % command["_command"]
+        func = "_%s_command" % str(command["_command"])
         if hasattr(self, func):
             return getattr(self, func)(command)
-        logger.error("Unknown routing command '%s' (%s), ignoring command!" % (command["command"], func))
+        logger.error("Unknown routing command '%s' (%s), ignoring command: %s" % (str(command["_command"]), func, str(command)))
         return None
     
     # *** routing methods that should be overwritten by child classes ***

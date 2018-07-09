@@ -50,5 +50,4 @@ class ProbabilisticForwardingMixin(object):
             self.__probabilistic_forwarding_peers[channel] |= to_add
         logger.debug("Probabilistic forwarding peers for channel '%s': %s..." % (str(channel), str(self.__probabilistic_forwarding_peers[channel])))
         return self.__probabilistic_forwarding_peers[channel]
-
     

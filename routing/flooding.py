@@ -291,7 +291,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         if not chain:
             logger.debug("Could not find hashchain in routing table, aborting unadvertise flooding...")
             return
-        logger.info("Found chain '%s' for unadvertisement of channel '%s'..." % (str(base64.b64encode(chain), "ascii"), unadvertisement["channel"]))
+        logger.debug("Found chain '%s' for unadvertisement of channel '%s'..." % (str(base64.b64encode(chain), "ascii"), unadvertisement["channel"]))
         
         # remove ALL nonces of this hashchain pointing to the incoming peer
         alternatives = set()
@@ -485,7 +485,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                 delay = SystemRandom().uniform(Flooding.settings["MIN_BECOME_MASTER_DELAY"], Flooding.settings["MAX_BECOME_MASTER_DELAY"])
                 logger.info("Trying to become master publisher in %.3f seconds..." % delay)
                 self.become_master_timers[command["channel"]] = self._add_timer(delay, {
-                    "_command": "Flooding___become_master",
+                    "_command": "Flooding__become_master",
                     "channel": command["channel"],
                 })
         else:
