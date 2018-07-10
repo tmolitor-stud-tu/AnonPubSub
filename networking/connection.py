@@ -33,7 +33,7 @@ class Connection(object):
     instances = {}
     len_size = len(struct.pack("!Q", 0))	# calculate length of packed unsigned long long int
     settings = {
-        "MAX_COVERT_PAYLOAD": 1200,         # always + 94 bytes overhead for ping added to final encrypted packet (+ 58 bytes for unencrypted packets)
+        "MAX_COVERT_PAYLOAD": 1200,         # always +94 bytes overhead for ping added to final encrypted packet (+58 bytes for unencrypted packets)
         "PING_INTERVAL": 0.25,
         "MAX_MISSING_PINGS": 16,           # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
         "MAX_RECONNECTS": 3,               # maximum consecutive reconnects after a connection failed
@@ -163,7 +163,7 @@ class Connection(object):
         return str(self.peer_id)
     
     def __repr__(self):
-        return "Connection<%s@%s%s>" % (str(self.peer_id), str(self.instance_id), str(self.addr))
+        return "Connection<%s[%s]%s>" % (str(self.peer_id), str(self.instance_id), str(self.addr))
     
     # *** internal methods for connection initialisation ***
     def _send_init_msg(self, flag):

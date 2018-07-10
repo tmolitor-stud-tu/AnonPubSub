@@ -14,8 +14,8 @@ import filters
 class Router(object):
     stopped = Event()
     settings = {
-        "OUTGOING_TIME": 1.0,
-        "TIMING_FACTOR": 2.0,
+        "OUTGOING_TIME": 1.0,       # time to wait until a message is really sent out
+        "TIMING_FACTOR": 2.0,       # factor to scale timing values by
     }
     
     # *** public interface ***
@@ -72,14 +72,14 @@ class Router(object):
         })
     
     # *** internal api methods for child classes ***
-    # _send_msg() and _send_covert_msg() are used by child classes for rate limited sending of messages (for routing demonstrating purposes)
+    # _send_msg() and _send_covert_msg() are used by child classes for rate limited sending of messages (for routing demonstration purposes)
     def _send_msg(self, msg, con):
         filters.msg_outgoing(msg, con)      # call filters framework
-        self.__outgoing("normal", msg, con)
+        self.__outgoing("data", msg, con)
     
     def _send_covert_msg(self, msg, con):
         if not filters.covert_msg_outgoing(msg, con):       # call filters framework
-            self.__outgoing("covert", msg, con)
+            self.__outgoing("covert_data", msg, con)
     
     def _add_timer(self, timeout, command):
         timeout *= Router.settings["TIMING_FACTOR"]     # delay timer for demonstrating purposes
@@ -147,15 +147,15 @@ class Router(object):
         logger.error("This router does not support dumping of its internal state!")
     
     # *** internal methods, DON'T touch from child classes ***
-    def __route(self, messagetype, message, connection):
+    def __route(self, message_category, message, connection):
         # ignore messages from unknown namespaces
-        func = "_route_%s" % messagetype        # main class namespace
+        func = "_route_%s" % message_category        # main class namespace
         if message.get_type().startswith(self.__class__.__name__) and hasattr(self, func):
             getattr(self, func)(message, connection)
         else:
             # iterate over all mixins and try to find mixin responsible for routing this message
             for mixin in set(base.__name__ for base in self.__class__.__bases__ if base.__name__.endswith("Mixin")):
-                func = "_%s__route_%s" % (mixin, messagetype)   # mixin namespace
+                func = "_%s__route_%s" % (mixin, message_category)   # mixin namespace
                 if message.get_type().startswith(mixin) and hasattr(self, func):
                     getattr(self, func)(message, connection)
     
@@ -169,7 +169,7 @@ class Router(object):
         # calculate next send time and update timestamps
         peer = con.get_peer_id()
         if peer not in self.last_outgoing_time:
-            self.last_outgoing_time[peer] = {"normal": datetime.now().timestamp(), "covert": datetime.now().timestamp()}
+            self.last_outgoing_time[peer] = {"data": datetime.now().timestamp(), "covert_data": datetime.now().timestamp()}
         # always wait a minimum of OUTGOING_TIME seconds for every message
         timestamp = max(
             self.last_outgoing_time[peer][msg_type] + Router.settings["OUTGOING_TIME"],
@@ -185,9 +185,9 @@ class Router(object):
     
     def __real_send_command(self, command):
         try:
-            if command["type"] == "normal":
+            if command["type"] == "data":
                 command["connection"].send_msg(command["message"])
-            elif command["type"] == "covert":
+            elif command["type"] == "covert_data":
                 command["connection"].send_covert_msg(command["message"])
             else:
                 raise ValueError("Message type '%s' unknown!" % command["type"])
