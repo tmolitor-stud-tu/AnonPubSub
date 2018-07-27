@@ -1,0 +1,61 @@
+/* reset-css für ausgewählte elemente */
+html {
+	margin: 0px;
+	padding: 0px;
+	font-size: 16px;
+	font-family: Helvetica, Arial, sans-serif;
+}
+body {
+	height: 100%;
+	width: 100%;
+	margin: 0px;
+	padding: 0px;
+	font-size: 16px;
+	font-family: Helvetica, Arial, sans-serif;
+}
+pre {
+	font-size: 1em;
+	font-family: Helvetica, Arial, sans-serif;
+	text-align: left;
+}
+textarea {
+	font-family: Courier, monospace;
+}
+table, table th, table td {
+	text-align: left;
+}
+li {
+	display: list-item;
+	text-indent: 0em;
+}
+ul, menu, dir, ol {
+	display: block;
+	text-align: left;
+	margin: 0px 0px 0px 0px;
+	padding: 0px 0px 0px 1em;
+}
+ol {
+	list-style-position: inside;
+	list-style-type: decimal;
+}
+ul, menu, dir {
+	list-style-position: outside;
+	list-style-type: disc;
+}
+ol, ul, menu, dir, dl {
+	& ol, & ul, & menu, & dir, & dl {
+		margin-bottom: 0px;
+		margin-top: 0px;
+	}
+	& ul, & menu, & dir {
+		list-style-type: circle;
+		margin: 0px 0px 0px 0em;
+		padding: 0px 0px 0px 0em;
+	}
+}
+small {
+	font-size: 0.6em;
+}
+img {
+	border: none;
+}

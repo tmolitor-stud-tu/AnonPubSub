@@ -4,243 +4,20 @@
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <script type="text/javascript" src="/js_lib/jquery.js"></script>
 <script type="text/javascript" src="/js_lib/jquery-ui.js"></script>
+<script type="text/javascript" src="/js_lib/springy.js"></script>
+<script type="text/javascript" src="/js_lib/jsPlumb-2.1.7.js"></script>
+<link rel="stylesheet" type="text/css" href="/js_lib/resetcss.css">
 <link rel="stylesheet" type="text/css" href="/js_lib/jquery-ui.css">
 <link rel="stylesheet" type="text/css" href="/js_lib/jquery-ui.structure.css">
 <link rel="stylesheet" type="text/css" href="/js_lib/jquery-ui.theme.css">
-<style type="text/css">
-body {
-	padding: 0em;
-	margin: 0em;
-	box-sizing: border-box;
-}
-.log {
-	padding-bottom: 0em;
-	margin-bottom: 0em;
-}
-.log span {
-	font-family: "Lucida Console", Monaco, monospace;
-	font-size: 0.75em;
-}
-.log span.error, .log span.ok { font-weight: bold; }
-.log span.error { color: red; }
-.log span.ok { color: green; }
-
-.logcontainer {
-	position: absolute;
-	display: grid;
-	grid-template-rows: 2em auto;
-	grid-gap: 0em;
-	width: 100%;
-	height: 10em;
-	bottom: 0em;
-	border-top: 1px solid black;
-}
-.logcontainer .toolbar {
-	grid-row: 1;
-	padding: 0.25em;
-	background-color: lightgrey;
-	border-bottom: 1px solid black;
-}
-.logcontainer .toolbar .node {
-	position: absolute;
-	padding: 0.25em;
-	right: 0em;
-}
-.logcontainer .log {
-	grid-row: 2;
-	padding-left: 0.25em;
-	overflow-y: scroll;
-}
-/*show only INFO and above*/
-.logcontainer .log.INFO span[data-levelname="DEBUG"] { display: none; }
-/*show only WARNING and above*/
-.logcontainer .log.WARNING span[data-levelname="DEBUG"] { display: none; }
-.logcontainer .log.WARNING span[data-levelname="INFO"] { display: none; }
-/*show only ERROR and above*/
-.logcontainer .log.ERROR span[data-levelname="DEBUG"] { display: none; }
-.logcontainer .log.ERROR span[data-levelname="INFO"] { display: none; }
-.logcontainer .log.ERROR span[data-levelname="WARNING"] { display: none; }
-</style>
-<script type="text/javascript"> (function() {
-var pad = function(pad, str, padLeft) {
-	if(typeof str === 'undefined')
-		return pad;
-	if(padLeft)
-		return (pad + str).slice(-pad.length);
-	else
-		return (str + pad).substring(0, pad.length);
-}
-var send_command = function(command, data) {
-	return $.ajax({
-		type: "POST",
-		url: "/command",
-		data: JSON.stringify($.extend({}, data || {}, {"_command": command})),
-		processData: false,
-		contentType: "application/json; charset=utf-8",
-		dataType: "text"
-	}).then(function(data) {
-		if(data != "OK")
-		{
-			alert("Command returned unexpected data: " + JSON.stringify(data))
-			throw data
-		}
-		return data;
-	}, function(error) {
-		alert("Could not send command: " + JSON.stringify(error));
-		throw error;
-	});
-};
-
-var append_to_log = function(msg) {
-	var scroll_down = $(".log")[0].scrollHeight - $(".log")[0].clientHeight <= $(".log")[0].scrollTop + 1;
-	$(".log").append(msg);
-	window.setTimeout(function() {
-		if(scroll_down)
-		{
-			//remove old elements in autoscroll mode
-			$(".log span").slice(0, -64).remove();
-			$(".log")[0].scrollTop = $(".log")[0].scrollHeight - $(".log")[0].clientHeight;
-		}
-	}, 0);
-};
-
-$(document).ready(function() {
-	var sse = new EventSource("/events");
-	sse.addEventListener("open", function(e) {
-		append_to_log($("<span>").addClass("ok").text("SSE connection established!").append($("<br>")));
-	});
-	sse.addEventListener("error", function(e) {
-		append_to_log($("<span>").addClass("error").text("SSE connection error, retrying!").append($("<br>")));
-		sse.close();
-		sse = new EventSource("/events");
-	});
-	sse.addEventListener("log", function(e) {
-		//extract log message and set data properties for filtering
-		var d = JSON.parse(e.data);
-		var msg = $("<span>").text(`${d.asctime} [${pad(Array(7+1).join("\u00A0"), d.levelname)}] ${d.name} {${d.threadName}} ${d.filename}:${d.lineno}: ${d.message}`).append($("<br>"));
-		msg.attr("data-levelname", d.levelname);
-		msg.attr("data-module", d.module);
-		msg.attr("data-name", d.name);
-		msg.attr("data-threadname", (d.threadName || "").split("::").pop());	//only the last element of thread id is used for filtering
-		
-		append_to_log(msg);
-	});
-	sse.addEventListener("new_node_id", function(e) {
-		var data = JSON.parse(e.data);
-		$(".logcontainer .toolbar .node").text(data.node_id);
-	});
-	
-	//log window
-	$(".logcontainer").resizable({
-		autoHide: false,
-		handles: "n"
-	});
-	$(".clear").click(function() {
-		$(this).parent().parent().find(".log span").remove();
-	});
-	$(".logcontainer .toolbar .levelname").change(function() {
-		var level = $(this).val();
-		$(".log").removeClass("DEBUG INFO WARNING ERROR");
-		$(".log").addClass(level);
-	});
-	
-	//settings window
-	$("#start").click(function() {
-		send_command("start", {
-			"router": $("#router").val(),
-			"settings": {
-				"networking": {
-					"Connection": {
-						//always + 94 bytes overhead for ping added to final encrypted packet (+ 58 bytes for unencrypted packets)
-						"MAX_COVERT_PAYLOAD": 1200,
-						"PING_INTERVAL": 0.25,
-						//consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
-						"MAX_MISSING_PINGS": 16,
-						//maximum consecutive reconnects after a connection failed
-						"MAX_RECONNECTS": 3,
-						"ENCRYPT_PACKETS": true
-					}
-				},
-				"routing": {
-					"Router": {
-						"OUTGOING_TIME": 1.0,
-						"TIMING_FACTOR": 2.0,
-					},
-					"ACO": {
-						"ANONYMOUS_IDS": false,
-						"ANT_COUNT": 5,
-						"EVAPORATION_TIME": 5,
-						"EVAPORATION_FACTOR": 0.75,
-						"DEFAULT_ROUNDS": 15,
-						"ACTIVATION_ROUNDS": 5,
-						"ANT_ROUND_TIME": 5,
-						// maintain overlay every DEFAULT_ROUNDS times or zero, if no maintenance should be done
-						"ANT_MAINTENANCE_TIME": self.DEFAULT_ROUNDS * self.ANT_ROUND_TIME,	//TODO: richtig berecnnen
-						//"ANT_MAINTENANCE_TIME": 0,
-						"AGGRESSIVE_TEARDOWN": false,
-						"PROBABILISTIC_FORWARDING_FRACTION": 0.25,
-					},
-					"Flooding": {
-						"ANONYMOUS_IDS": true,
-						"MAX_HASHES": 1000,         // this limits the maximum diameter of the underlay to this value
-						"REFLOOD_DELAY": 2.0,
-						"RANDOM_MASTER_PUBLISH": false,
-						"SUBSCRIBE_DELAY": 2.0,
-						"AGGRESSIVE_TEARDOWN": false,
-						"AGGRESSIVE_RESUBSCRIBE": false,
-						"PROBABILISTIC_FORWARDING_FRACTION": 0.25,
-					},
-					"Randomwalk": {
-						"INITIAL_TTL": 60,
-						"INITIAL_WALKERS": 5,
-					},
-					"Gossiping": {
-						"INITIAL_TTL": 60,
-						"GOSSIPING_PEERS": 2,
-					}
-				}
-			}
-		});
-	});
-	$("#stop").click(function() {
-		send_command("stop");
-	});
-	$("#subscribe").click(function() {
-		send_command("subscribe", {
-			"channel": "test"
-		});
-	});
-	$("#publish").click(function() {
-		send_command("publish", {
-			"channel": "test"
-		});
-	});
-	$("#connect").click(function() {
-		send_command("connect", {
-			"addr": $("#addr").val()
-		});
-	});
-	$("#dump").click(function() {
-		send_command("dump");
-	});
-});
-})();</script>
+<link rel="stylesheet" type="text/less" href="/js_lib/style.less">	<!-- own styles -->
+<!-- this has to come AFTER all lesscss styles!-->
+<script type="text/javascript" src="/js_lib/less.js"></script>
+<script type="text/javascript" src="/js_lib/script.js"></script>	<!-- own script (has to come after less.js to read correct styles) -->
 </head>
 <body>
-	<select id="router">
-		<option calue="ACO">ACO</option>
-		<option calue="Flooding" selected>Flooding</option>
-		<option calue="Randomwalk">Randomwalk</option>
-		<option calue="Gossiping">Gossiping</option>
-	</select>
-	<button id="start">Start</button>
-	<button id="stop">Stop</button>
-	<button id="subscribe">Subscribe</button>
-	<button id="publish">Publish</button>
-	<input type="text" id="addr" value="127.0.0.20">
-	<button id="connect">Connect</button>
-	<button id="dump">Dump internal state of router</button>
-	<div class="logcontainer">
+	<!-- html templates used by javascript -->
+	<div class="logcontainer logcontainer-template">
 		<div class="toolbar">
 			<button class="clear">Clear</button>
 			<label>Loglevel: <select class="levelname">
@@ -249,9 +26,263 @@ $(document).ready(function() {
 				<option>WARNING</option>
 				<option>ERROR</option>
 			</select></label>
-			<div class="node"></div>
+			<label><input type="checkbox" class="autocleanup" checked> Autoremove old Logentries</label>
+			<div class="node"><span class="uuid"></span> <b><span class="host"></span></b></div>
 		</div>
 		<div class="log DEBUG"></div>
+	</div>
+	<div class="node node-template"><label></label><div class="ep"></div><div class="led-container"><div class="leds">
+		<div class="led led-0"></div>
+		<div class="led led-1"></div>
+		<div class="led led-2"></div>
+		<div class="led led-3"></div>
+		<div class="led led-4"></div>
+		<div class="led led-5"></div>
+		<div class="led led-6"></div>
+		<div class="led led-7"></div>
+		<div class="led led-8"></div>
+		<div class="led led-9"></div>
+	</div></div><div class="overlay" title="Could not connect to node"></div></div>
+	<div class="pub-item pub-item-template"><span class="channel"></span> <span class="X" title="Unpublish">X</span></div>
+	<div class="sub-item sub-item-template"><span class="channel"></span> <span class="X" title="Unsubscribe">X</span></div>
+	<div class="node-settings node-settings-template">
+		<div class="settings-switcher" title="Switch to global settings (click on one node to return to node specific settings)"></div>
+		<div class="settings-heading">Info:</div>
+		<table class="settings-container info">
+			<tr class="label"><td>Label:</td><td class="value"></td></tr>
+			<tr class="host"><td>Host:</td><td class="value"></td></tr>
+			<tr class="uuid"><td>UUID:</td><td class="value"></td></tr>
+			<tr class="leds"><td>LEDs:</td><td class="value"><div class="leds"><div class="led led-0">0</div><div class="led led-1">1</div><div class="led led-2">2</div><div class="led led-3">3</div><div class="led led-4">4</div><div class="led led-5">5</div><div class="led led-6">6</div><div class="led led-7">7</div><div class="led led-8">8</div><div class="led led-9">9</div></div></td></tr>
+			<tr class="data"><td>Data:</td><td class="value"></td></tr>
+		</table>
+		<div class="settings-heading">Control:</div>
+		<table class="settings-container actions">
+			<tr><td><button class="start" disabled>Start Router</button></td><td><button class="stop">Stop Router</button></td></tr>
+			<tr><td colspan="2" class="nopadding"><input type="text" class="channel" placeholder="Channel name" value="test" maxlength="8"></td></tr>
+			<tr><td><button class="publish">Publish</button></td><td><button class="subscribe">Subscribe</button></td></tr>
+			<tr><td class="list-heading">Publish:</td><td class="pub-list"></td></tr>
+			<tr><td class="list-heading">Subscribe:</td><td class="sub-list"></td></tr>
+		</table>
+		<div class="settings-heading">Last queried internal state:</div>
+		<table class="settings-container state">
+			<tr><td colspan="2" class="nopadding"><textarea class="state"></textarea></td></tr>
+			<tr><td colspan="2" class="nopadding"><button class="dump">Dump internal state of router</button></td></tr>
+		</table>
+	</div>
+	<!-- end templates -->
+	
+	<!-- this is invisible -->
+	<input type="file" id="graphFileInput">
+	<input type="file" id="filterFileInput">
+	
+	<div class="grid-status">
+		<b>Status: </b><span class="status">IDLE</span>
+	</div>
+	
+	<div class="grid-header">
+		<button id="load">Load Graph</button>
+		<button id="save" disabled>Save Graph</button>
+		<button id="load-filters" title="Filters not yet loaded"><span class="checkmark">✓</span><span class="crossmark">X</span> Load filters</button>
+		<button id="start" disabled>Start Router</button>
+		<button id="stop" disabled>Stop Router</button>
+		<button id="dump-all" disabled>Dump all states</button>
+		<button id="relayout">Relayout Gaph</button>
+		<button id="reset">Reset all nodes</button>
+		<button id="clear-all">Clear all logs</button>
+		<label><input type="checkbox" id="autocleanup-all" checked> Autoremove all old logentries</label>
+	</div>
+	
+	<div class="grid-settings">
+		<div class="global-settings">
+			<div class="settings-heading">Network settings:</div>
+			<table class="settings-container">
+			<tr title="Always +94 bytes overhead for ping added to final encrypted packet (+58 bytes for unencrypted packets)">
+				<td>Max covert payload:</td>
+				<td><input type="number" value="1300" min="1024" max="4096" step="1" class="setting" data-setting="networking.Connection.MAX_COVERT_PAYLOAD"></td>
+			</tr>
+			<tr title="Interval between keepalive pings in seconds. This is used for covert channel transmissions so keep it low!">
+				<td>Ping interval:</td>
+				<td><input type="number" value="0.250" min="0.010" max="1.00" step="0.010" class="setting" data-setting="networking.Connection.PING_INTERVAL"></td>
+			</tr>
+			<tr title="Consecutive missing pings for connection timeout, the timeout in seconds will be MAX_MISSING_PINGS * PING_INTERVAL">
+				<td>Max missing pings:</td>
+				<td><input type="number" value="16" min="4" max="128" step="1" class="setting" data-setting="networking.Connection.MAX_MISSING_PINGS"></td>
+			</tr>
+			<tr title="Try to reconnect at most this often before giving up">
+				<td>Max reconnects:</td>
+				<td><input type="number" value="3" min="1" max="5" step="1" class="setting" data-setting="networking.Connection.MAX_RECONNECTS"></td>
+			</tr>
+			<tr title="Encrypt packets on the wire (using ChaCha20-Poly1305 and X25519 for ephemeral key exchange)">
+				<td>Encrypt packets:</td>
+				<td><label><input type="checkbox" data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="networking.Connection.ENCRYPT_PACKETS"> true</label></td>
+			</tr>
+			</table>
+			
+			<div class="settings-heading">General router settings:</div>
+			<table class="settings-container">
+			<tr title="Delay every message by this amount of seconds before it is really sent out">
+				<td>Outgoing time:</td>
+				<td><input type="number" value="1.0" min="0.0" max="10.0" step="0.25" class="setting" data-setting="routing.Router.OUTGOING_TIME"></td>
+			</tr>
+			<tr title="Factor to scale timer intervals by. Every timer created by the router will be multiplied by this value.">
+				<td>Timing factor:</td>
+				<td><input type="number" value="2.0" min="1.0" max="10.0" step="0.25" class="setting" data-setting="routing.Router.TIMING_FACTOR"></td>
+			</tr>
+			<tr title="Which routing algorithm should be used (settings for each algorithm are below)">
+				<td>Router:</td>
+				<td><select id="router">
+					<option calue="ACO">ACO</option>
+					<option calue="Flooding" selected>Flooding</option>
+					<option calue="Randomwalk">Randomwalk</option>
+					<option calue="Gossiping">Gossiping</option>
+				</select></td>
+			</tr>
+			</table>
+			
+			<div class="router-settings router-ACO">
+				<div class="settings-heading">ACO settings:</div>
+				<table class="settings-container">
+				<tr title="Generate new per channel subscriber/publisher IDs for every new subscription/publication">
+					<td>Anonymous IDs:</td>
+					<td><label><input type="checkbox" checked data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="routing.ACO.ANONYMOUS_IDS"> true</label></td>
+				</tr>
+				<tr title="Numer of ants to send out each round">
+					<td>Ant count:</td>
+					<td><input type="number" value="5" min="1" max="50" step="1" class="setting" data-setting="routing.ACO.ANT_COUNT"></td>
+				</tr>
+				<tr title="Do pheromone evaporation every 'x' seconds">
+					<td>Evaporation time:</td>
+					<td><input type="number" value="5" min="1" max="10" step="1" class="setting" data-setting="routing.ACO.EVAPORATION_TIME"></td>
+				</tr>
+				<tr title="Multiply pheromones by this factor every 'evaporation time' seconds">
+					<td>Evaporation factor:</td>
+					<td><input type="number" value="0.75" min="0.01" max="1.0" step="0.01" class="setting" data-setting="routing.ACO.EVAPORATION_FACTOR"></td>
+				</tr>
+				<tr title="Number of ant rounds each subscriber will initiate when subscribing">
+					<td>Default rounds:</td>
+					<td><input type="number" value="15" min="1" max="1000" step="1" class="setting" data-setting="routing.ACO.DEFAULT_ROUNDS"></td>
+				</tr>
+				<tr title="Send out activating ants every 'x' rounds">
+					<td>Activation rounds:</td>
+					<td><input type="number" value="5" min="1" max="1000" step="1" class="setting" data-setting="routing.ACO.ACTIVATION_ROUNDS"></td>
+				</tr>
+				<tr title="Time in seconds an ant round should take before the next round is started">
+					<td>Ant round time:</td>
+					<td><input type="number" value="5" min="0.5" max="60.0" step="0.5" class="setting" data-setting="routing.ACO.ANT_ROUND_TIME"></td>
+				</tr>
+				<tr title="Maintain overlay every 'x' seconds (e.g. start new ant rounds). Set this to zero to deactivate automatic maintenance">
+					<td>Ant maintenance time:</td>
+					<td><input type="number" value="0" min="1" max="3600" step="1" class="setting" data-setting="routing.ACO.ANT_MAINTENANCE_TIME"></td>
+				</tr>
+				<tr title="Completely tear down old active paths (or path fragments) if a new active path is found and activated">
+					<td>Aggressive teardown:</td>
+					<td><label><input type="checkbox" data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="routing.ACO.AGGRESSIVE_TEARDOWN"> true</label></td>
+				</tr>
+				<tr title="Fraction of neighbours to select for probabilistic forwarding">
+					<td>Probabilistic forwarding fraction:</td>
+					<td><input type="number" value="0.25" min="0" max="1" step="0.05" class="setting" data-setting="routing.ACO.PROBABILISTIC_FORWARDING_FRACTION"></td>
+				</tr>
+				</table>
+			</div>
+			<div class="router-settings router-Flooding">
+				<div class="settings-heading">Flooding settings:</div>
+				<table class="settings-container">
+				<tr title="Generate new per channel subscriber/publisher IDs for every new subscription/publication">
+					<td>Anonymous IDs:</td>
+					<td><label><input type="checkbox" checked data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="routing.Flooding.ANONYMOUS_IDS"> true</label></td>
+				</tr>
+				<tr title="This limits the maximum diameter of the underlay approximately to this value (the actual possible diameter of the overlay depends on the structure of the overlay)">
+					<td>Max hashes:</td>
+					<td><input type="number" value="1000" min="100" max="10000" step="1" class="setting" data-setting="routing.Flooding.MAX_HASHES"></td>
+				</tr>
+				<tr title="Time to wait before REflooding advertisements for alternative paths upon receiving an unadvertise message">
+					<td>Reflood delay:</td>
+					<td><input type="number" value="2.0" min="1" max="10.0" step="0.5" class="setting" data-setting="routing.Flooding.REFLOOD_DELAY"></td>
+				</tr>
+				<tr title="This setting determines if secondary publishers should publish to a randomly selected master publisher or publish to the same master every time (the first one seen for this channel)">
+					<td>Random master publish:</td>
+					<td><label><input type="checkbox" checked data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="routing.Flooding.RANDOM_MASTER_PUBLISH"> true</label></td>
+				</tr>
+				<tr title="Time to wait before subscribing after receiving advertisements for a channel we are interested in (this gives slower but shorter routing paths a change to catch up and being used in the subscription)">
+					<td>Subscribe delay:</td>
+					<td><input type="number" value="2.0" min="0.1" max="10.0" step="0.1" class="setting" data-setting="routing.Flooding.SUBSCRIBE_DELAY"></td>
+				</tr>
+				<tr title="Completely tear down old active paths (or path fragments) if a new active path is found and activated">
+					<td>Aggressive teardown:</td>
+					<td><label><input type="checkbox" data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="routing.Flooding.AGGRESSIVE_TEARDOWN"> true</label></td>
+				</tr>
+				<tr title="Create a new overlay if we get to know a shorter path through (re)flooding even though we already activated a longer path">
+					<td>Aggressive resubscribe:</td>
+					<td><label><input type="checkbox" data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="routing.Flooding.AGGRESSIVE_RESUBSCRIBE"> true</label></td>
+				</tr>
+				<tr title="Minimum time to wait before we try to become a new master (we only become a master if we don't know any master for the channel after waiting)">
+					<td>Min become master delay:</td>
+					<td><input type="number" value="1.0" min="1.0" max="20.0" step="0.5" class="setting" data-setting="routing.Flooding.MIN_BECOME_MASTER_DELAY"></td>
+				</tr>
+				<tr title="Maximum time to wait before we try to become a new master (we only become a master if we don't know any master for the channel after waiting)">
+					<td>Max become master delay:</td>
+					<td><input type="number" value="8.0" min="1.0" max="20.0" step="0.5" class="setting" data-setting="routing.Flooding.MAX_BECOME_MASTER_DELAY"></td>
+				</tr>
+				<tr title="Fraction of neighbours to select for probabilistic forwarding">
+					<td>Probabilistic forwarding fraction:</td>
+					<td><input type="number" value="0.25" min="0" max="1" step="0.05" class="setting" data-setting="routing.Flooding.PROBABILISTIC_FORWARDING_FRACTION"></td>
+				</tr>
+				</table>
+			</div>
+			<div class="router-settings router-Randomwalk">
+				<div class="settings-heading">Randomwalk settings:</div>
+				<table class="settings-container">
+				<tr title="TTL for each message">
+					<td>Initial TTL:</td>
+					<td><input type="number" value="60" min="1" max="10000" step="1" class="setting" data-setting="routing.Randomwalk.INITIAL_TTL"></td>
+				</tr>
+				<tr title="Numer of walkers to send out when publishing">
+					<td>Initial walkers:</td>
+					<td><input type="number" value="5" min="1" max="50" step="1" class="setting" data-setting="routing.Randomwalk.INITIAL_WALKERS"></td>
+				</tr>
+				<tr title="Fraction of neighbours to select for probabilistic forwarding">
+					<td>Probabilistic forwarding fraction:</td>
+					<td><input type="number" value="0.25" min="0" max="1" step="0.05" class="setting" data-setting="routing.Randomwalk.PROBABILISTIC_FORWARDING_FRACTION"></td>
+				</tr>
+				</table>
+			</div>
+			<div class="router-settings router-Gossiping">
+				<div class="settings-heading">Gossiping settings:</div>
+				<table class="settings-container">
+				<tr title="TTL for each message">
+					<td>Initial TTL:</td>
+					<td><input type="number" value="60" min="1" max="10000" step="1" class="setting" data-setting="routing.Gossiping.INITIAL_TTL"></td>
+				</tr>
+				<tr title="Numer of gossiping peers to forward each message to">
+					<td>Gossiping peers:</td>
+					<td><input type="number" value="2" min="1" max="50" step="1" class="setting" data-setting="routing.Gossiping.GOSSIPING_PEERS"></td>
+				</tr>
+				<tr title="Fraction of neighbours to select for probabilistic forwarding">
+					<td>Probabilistic forwarding fraction:</td>
+					<td><input type="number" value="0.25" min="0" max="1" step="0.05" class="setting" data-setting="routing.Gossiping.PROBABILISTIC_FORWARDING_FRACTION"></td>
+				</tr>
+				</table>
+			</div>
+		</div>
+	</div>
+	
+	<div class="grid-right">
+		<div id="canvas"></div>
+		
+		<div class="right-log">
+			<div class="logcontainer node-none">
+				<div class="toolbar">
+					<button class="clear" disabled>Clear</button>
+					<label>Loglevel: <select class="levelname" disabled>
+						<option selected>DEBUG</option>
+						<option>INFO</option>
+						<option>WARNING</option>
+						<option>ERROR</option>
+					</select></label>
+					<label><input type="checkbox" class="autocleanup" checked disabled style="display: inline; height: 1em;"> Autoremove old Logentries</label>
+				</div>
+			</div>
+		</div>
 	</div>
 </body>
 </html>
