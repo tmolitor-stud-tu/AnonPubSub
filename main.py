@@ -88,6 +88,7 @@ def subscribe(command, router, received):
     if command["channel"] not in received:
         received[command["channel"]] = 0
         def dummy_receiver(data):
+            event_queue.put({"type": "data", "data": {"received": data, "expected": received[command["channel"]] + 1}})
             if data != received[command["channel"]] + 1:
                 logger.warning("UNEXPECTED DATA RECEIVED (%s != %s)!!!" % (str(data), str(received[command["channel"]] + 1)))
             received[command["channel"]] = data

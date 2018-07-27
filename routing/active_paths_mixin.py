@@ -242,7 +242,7 @@ class ActivePathsMixin(object):
         self.__reverse_edges[unsubscribe["channel"]][unsubscribe["subscriber"]].values()):
             if node_id in self.connections:
                 logger.info("Routing unsubscribe to %s..." % str(self.connections[node_id]))
-                self._send_covert_msg(error, self.connections[node_id])
+                self._send_covert_msg(unsubscribe, self.connections[node_id])
         
         # delete active edge to this subscriber
         if unsubscribe["subscriber"] in self.__active_edges[unsubscribe["channel"]]:
