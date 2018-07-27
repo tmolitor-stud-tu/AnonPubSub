@@ -98,6 +98,8 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             return self._route_unsubscribe(msg, incoming_connection)
         elif msg.get_type().endswith("_teardown"):
             return self._route_teardown(msg, incoming_connection)
+        elif msg.get_type().endswith("_unpublish"):
+            return self._route_unpublish(msg, incoming_connection)
         elif msg.get_type().endswith("_ant"):
             return self._route_ant(msg, incoming_connection)
     
@@ -116,7 +118,8 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                 "retry": 0
             })
         self._init_channel(error["channel"])
-        return self._ActivePathsMixin__route_error(error, incoming_connection, recreate_overlay)
+        subscriber_id = self.subscriber_ids[error["channel"]] if error["channel"] in self.subscriber_ids else None
+        return self._ActivePathsMixin__route_error(error, subscriber_id, incoming_connection, recreate_overlay)
     
     def _route_unsubscribe(self, unsubscribe, incoming_connection):
         self._init_channel(unsubscribe["channel"])
@@ -125,6 +128,10 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
     def _route_teardown(self, teardown, incoming_connection):
         self._init_channel(teardown["channel"])
         return self._ActivePathsMixin__route_teardown(teardown, incoming_connection)
+    
+    def _route_unpublish(self, unpublish, incoming_connection):
+        self._init_channel(unpublish["channel"])
+        return self._ActivePathsMixin__route_unpublish(unpublish, unpublish["channel"] in self.publishing, incoming_connection)
     
     def _route_publish(self, publish, incoming_connection):
         logger.info("Routing publish: %s coming from %s..." % (str(publish), str(incoming_connection)))
@@ -182,7 +189,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             else:
                 logger.debug("Cannot route %s ant, killing ant %s!" % ("activating" if ant["activating"] else "searching", str(searching_ant)))
             
-            # let ant return if we are a publisher for this channel (this duplicates the ant into one searching further and one returning)
+            # let another ant return if we are a publisher for this channel (this duplicates the ant into one searching further and one returning)
             if ant["channel"] in self.publishing:
                 ant["returning"] = True
                 ant["ttl"] = float("inf")
@@ -193,7 +200,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         # route returning ants
         else:
             # update pheromones on edge to incoming node, serialize pheromones write access through command queue
-            if ant["channel"] not in self.publishing and incoming_connection:   # ant didn't start its way here --> put pheromones on incoming edge
+            if incoming_connection:   # ant didn't start its way here --> put pheromones on incoming edge
                 self._call_command({
                     "_command": "ACO__update_pheromones",
                     "channel": ant["channel"],
@@ -202,7 +209,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                 })
             
             # add publisher to the list of seen ones (this makes sure we don't start new ant rounds if we receive a publish message
-            # from this publisher in the future but rather ignore this message)
+            # from this publisher in the future but rather ignore that message)
             if ant["activating"] and ant["publisher"] not in self.publishers_seen[ant["channel"]]:
                 self.publishers_seen[ant["channel"]].add(ant["publisher"])
             
@@ -328,11 +335,21 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         })
         self._route_data(msg)
     
+    def _unpublish_command(self, command):
+        # no need to call parent class here, doing everything on our own
+        self._init_channel(command["channel"])
+        
+        # remove publisher identity and send out unsubscribe message to tear down all active paths to subscribers
+        if command["channel"] in self.publishing:
+            self._ActivePathsMixin__unpublish(command["channel"], self.publisher_ids[command["channel"]])
+            del self.publisher_ids[command["channel"]]
+            self.publishing.discard(command["channel"])
+        
+    
     def _dump_command(self, command):
         state = {
             "connections": list(self.connections.values()),
-            "subscriptions": self.subscriptions,
-            "timers": self.timers,
+            "subscriptions": list(self.subscriptions.keys()),
             "subscriber_ids": self.subscriber_ids,
             "publisher_ids": self.publisher_ids,
             "pheromones": self.pheromones,
@@ -430,8 +447,6 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             })
     
     def _send_out_ants(self, channel, round_count, ttl=6):
-        if channel not in self.subscriber_ids:
-            self.subscriber_ids[channel] = str(uuid.uuid4()) if ACO.settings["ANONYMOUS_IDS"] else self.node_id
         logger.info("Channel '%s': Round %d: Sending out %d new %s ants..." % (
             channel,
             round_count,

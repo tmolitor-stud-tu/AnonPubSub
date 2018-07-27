@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 # own classes
 import filters
+from networking import Message
 
 
 class Router(object):
@@ -64,6 +65,13 @@ class Router(object):
             "data": data
         })
     
+    def unpublish(self, channel):
+        logger.debug("Unpublishing channel '%s'..." % str(channel))
+        self.queue.put({
+            "_command": "unpublish",
+            "channel": channel
+        })
+    
     # this dumps internal data structures of the child class to logger if implemented
     def dump(self, callback=None):
         self.queue.put({
@@ -74,8 +82,8 @@ class Router(object):
     # *** internal api methods for child classes ***
     # _send_msg() and _send_covert_msg() are used by child classes for rate limited sending of messages (for routing demonstration purposes)
     def _send_msg(self, msg, con):
-        filters.msg_outgoing(msg, con)      # call filters framework
-        self.__outgoing("data", msg, con)
+        if not filters.msg_outgoing(msg, con):      # call filters framework
+            self.__outgoing("data", msg, con)
     
     def _send_covert_msg(self, msg, con):
         if not filters.covert_msg_outgoing(msg, con):       # call filters framework
@@ -142,6 +150,9 @@ class Router(object):
     def _publish_command(self, command):
         pass    # this command has no common implementation that could be used by child classes
     
+    def _unpublish_command(self, command):
+        pass    # this command has no common implementation that could be used by child classes
+    
     def _dump_command(self, command):
         # this command has no common implementation that could be used by child classes but is not mandatory to implement
         logger.error("This router does not support dumping of its internal state!")
@@ -164,21 +175,29 @@ class Router(object):
         
         # use "Router__real_send" as reference to our __real_send_command() because of name mangling semantics of double underscore
         # (those methods cannot accidentally be overwritten from child)
-        command = {"_command": "Router__real_send", "type": msg_type, "message": msg, "connection": con}
+        # clone message object to decouple it from changes the caller does after "sending it out"
+        command = {"_command": "Router__real_send", "type": msg_type, "message": Message(msg), "connection": con}
         
         # calculate next send time and update timestamps
         peer = con.get_peer_id()
         if peer not in self.last_outgoing_time:
             self.last_outgoing_time[peer] = {"data": datetime.now().timestamp(), "covert_data": datetime.now().timestamp()}
+        
+        # *** this will send out only one message per OUTGOING_TIME
         # always wait a minimum of OUTGOING_TIME seconds for every message
-        timestamp = max(
-            self.last_outgoing_time[peer][msg_type] + Router.settings["OUTGOING_TIME"],
-            datetime.now().timestamp() + Router.settings["OUTGOING_TIME"]
-        )
+        #timestamp = max(
+            #self.last_outgoing_time[peer][msg_type] + Router.settings["OUTGOING_TIME"],
+            #datetime.now().timestamp() + Router.settings["OUTGOING_TIME"]
+        #)
+        
+        # *** this will delay every message for OUTGOING_TIME seconds (but send out more than one message per OUTGOING_TIME if requested)
+        # delay every message by OUTGOING_TIME seconds
+        timestamp = datetime.now().timestamp() + Router.settings["OUTGOING_TIME"]
+        
         self.last_outgoing_time[peer][msg_type] = timestamp     # update last outgoing timestamp
         
         # add send timer
-        # (don't use _add_timer() directly because this method multiplies the timeout with TIMING_FACTOR, see the comments there)
+        # (don't use _add_timer() directly because that method multiplies the timeout with TIMING_FACTOR, see the comments there)
         with self.timers_condition:
             self.timers.add({"timeout": timestamp, "id": str(uuid.uuid4()), "command": command})
             self.timers_condition.notify()      # notify timers thread of changes

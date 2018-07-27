@@ -59,8 +59,9 @@ def sigint_handler(sig, frame):
 signal.signal(signal.SIGINT, sigint_handler)
 
 
-# our mainloop
+# our mainloop and some aux functions it uses
 node_id = str(uuid.uuid4())
+logger.info("My node id is now '%s'..." % node_id)
 to_publish = {}
 received = {}
 def apply_settings(data, path, apply_to):
@@ -73,33 +74,31 @@ def apply_settings(data, path, apply_to):
         apply_to.settings = {}
     for key, value in dict(data).items():
         apply_to.settings[key] = value
-def subscribe(command, router, received):
-    if router:  # only subscribe if we have a router
-        if command["channel"] not in received or True:
-            received[command["channel"]] = 0
-            def dummy_receiver(data):
-                if data != received[command["channel"]] + 1:
-                    logger.error("UNEXPECTED DATA RECEIVED (%s != %s)!!!" % (str(data), str(received[command["channel"]] + 1)))
-                received[command["channel"]] = data
-            router.subscribe(command["channel"], dummy_receiver)
-            event_queue.put({"type": "subscribed", "data": {"channel": command["channel"]}})
-        else:
-            event_queue.put({"type": "already_subscribed", "data": {"channel": command["channel"]}})
-    else:
-        logger.error("Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
-        event_queue.put({"type": "subscribe_failed", "data": {"channel": command["channel"], "error": "router uninitialized"}})
-event_queue.put({"type": "new_node_id", "data": {"node_id": node_id}})
+def fail_command(command, error):
+    global command_failed
+    command_failed = True
+    if command["_command"][:1] != "_":
+        event_queue.put({"type": "command_failed", "data": {"id": command["_id"], "error": error}})
+    logger.error(error)
+def subscribe(command, router, received):    
+    if command["channel"] not in received:
+        received[command["channel"]] = 0
+        def dummy_receiver(data):
+            if data != received[command["channel"]] + 1:
+                logger.warning("UNEXPECTED DATA RECEIVED (%s != %s)!!!" % (str(data), str(received[command["channel"]] + 1)))
+            received[command["channel"]] = data
+        router.subscribe(command["channel"], dummy_receiver)
 while True:
-    # periodically publish a simple counter on all configured channels (about every second)
+    # periodically publish a simple counter on all configured channels (about every second or every incoming command (whichever comes first))
     for channel in to_publish:
         if router:  # only publish if we have a router
             router.publish(channel, to_publish[channel]);
             to_publish[channel] += 1
         else:
             logger.error("Cannot publish on channel '%s': no router initialized!" % str(channel))
-            event_queue.put({"type": "publish_failed", "data": {"channel": channel, "error": "router uninitialized"}})
     
     # process UI commands
+    command_failed = False
     try:
         command = command_queue.get(True, 1)   # 1 second timeout
     except Empty as err:
@@ -113,25 +112,20 @@ while True:
             try:
                 router_class = getattr(routing, command["router"])
             except AttributeError:
-                logger.error("Cannot start router '%s': unknown" % str(command["router"]))
+                fail_command(command, "Cannot start router '%s': unknown" % str(command["router"]))
                 continue
             
             # apply settings if present
-            apply_settings(command, ["settings", "networking", "Connection"], networking.Connection)
-            apply_settings(command, ["settings", "routing", "Router"], routing.Router)
-            apply_settings(command, ["settings", "routing", command["router"]], router_class)
+            apply_settings(command["settings"], ["networking", "Connection"], networking.Connection)
+            apply_settings(command["settings"], ["routing", "Router"], routing.Router)
+            apply_settings(command["settings"], ["routing", command["router"]], router_class)
             
             # initialize networking and router
             queue = Queue()
-            if "regenerate_node_id" in command and command["regenerate_node_id"]:
-                node_id = str(uuid.uuid4())
-                event_queue.put({"type": "new_node_id", "data": {"node_id": node_id}})
-            networking.Connection.init(node_id, queue, args.listen)
+            networking.Connection.init(node_id, queue, args.listen, event_queue)
             router = router_class(node_id, queue)
-            event_queue.put("start_complete")
         else:
-            logger.error("Cannot start new router '%s': old router still initialized" % str(command["router"]))
-            event_queue.put({"type": "router_already_initialized", "data": {"new_router": command["router"], "old_router": router.__class__.__name__}})
+            fail_command(command, "Cannot start new router '%s': old router still initialized" % str(command["router"]))
     elif command["_command"] == "stop":
         if router:
             router.stop()
@@ -139,31 +133,55 @@ while True:
         networking.Connection.shutdown()
         queue = None
         to_publish = {}
-        event_queue.put("stop_complete")
+        received = {}
     elif command["_command"] == "reset":
-        event_queue.put("reset_pending")
+        logger.info("GUI command completed: %s" % str(command["_id"]))
+        event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
+        command_queue.task_done()
+        time.sleep(1);          # wait some time to deliver pending events via SSE
         cleanup_and_exit(0)     # the startup script will restart this node after a few seconds
     elif command["_command"] == "connect":
         if router:  # router and network are initialized at once, if we have no router our network is down, too
             networking.Connection.connect_to(command["addr"])
-            event_queue.put({"type": "connection_sequence_started", "data": {"addr": command["addr"], "status": "ok"}})
         else:
-            logger.error("Cannot connect to peer at %s: network not initialized!" % str(command["addr"]))
-            event_queue.put({"type": "connection_sequence_started", "data": {"addr": command["addr"], "status": "error", "error": "router uninitialized"}})
+            fail_command(command, "Cannot connect to peer at %s: network not initialized!" % str(command["addr"]))
+    elif command["_command"] == "disconnect":
+        if router:  # router and network are initialized at once, if we have no router our network is down, too
+            networking.Connection.disconnect_from(command["addr"])
+        else:
+            fail_command(command, "Cannot disconnect from peer at %s: network not initialized!" % str(command["addr"]))
     elif command["_command"] == "publish":
-        to_publish[command["channel"]] = 0
-        event_queue.put({"type": "published", "data": {"channel": command["channel"]}})
+        if router:
+            to_publish[command["channel"]] = 0
+        else:
+            fail_command(command, "Cannot publish on channel '%s': no router initialized!" % str(command["channel"]))
+    elif command["_command"] == "unpublish":
+        if router:
+            if command["channel"] in to_publish:
+                del to_publish[command["channel"]]
+            router.unpublish(command["channel"])
+        else:
+            fail_command(command, "Cannot unpublish on channel '%s': no router initialized!" % str(command["channel"]))
     elif command["_command"] == "subscribe":
-        subscribe(command, router, received)
+        if router:  # only subscribe if we have a router
+            subscribe(command, router, received)
+        else:
+            fail_command(command, "Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
+    elif command["_command"] == "unsubscribe":
+        if router:  # only unsubscribe if we have a router
+            router.unsubscribe(command["channel"])
+        else:
+            fail_command(command, "Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
     elif command["_command"] == "dump":
         def cb(state):
-            event_queue.put({"type": "dump", "data": str(state)})
+            event_queue.put({"type": "state", "data": state})
         if router:
             router.dump(cb)
     elif command["_command"] == "_new_http_client":
-        event_queue.put({"type": "new_node_id", "data": {"node_id": node_id}})
+        event_queue.put({"type": "node_id", "data": {"node_id": node_id}})
     else:
-        logger.error("Ignoring unknown GUI command: %s" % str(command))
-        event_queue.put({"type": "unknown_gui_command", "data": {"command": command}})
+        fail_command(command, "Ignoring unknown GUI command: %s" % str(command["_id"]))
+    if command["_command"][:1] != "_" and not command_failed:       # don't ack internal or failed commands
+        logger.info("GUI command completed: %s" % str(command["_id"]))
+        event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
     command_queue.task_done()
-

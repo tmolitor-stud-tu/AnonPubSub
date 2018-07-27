@@ -151,6 +151,13 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             return self._route_teardown(msg, incoming_connection)
         elif msg.get_type().endswith("_subscribe"):
             return self._route_subscribe(msg, incoming_connection)
+        elif msg.get_type().endswith("_unpublish"):
+            return self._route_unpublish(msg, incoming_connection)
+    
+    def _route_unpublish(self, unpublish, incoming_connection):
+        self._init_channel(unpublish["channel"])
+        unpublish["publisher"] = self._canonize_active_path_identifier(unpublish["channel"], unpublish["publisher"])
+        return self._ActivePathsMixin__route_unpublish(unpublish, self.master[unpublish["channel"]], incoming_connection)
     
     def _route_subscribe(self, subscription, incoming_connection):
         logger.info("Routing subscription: %s coming from %s..." % (str(subscription), str(incoming_connection)))
@@ -174,6 +181,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                     # randomly pick one item of our filtered peer_set and return None if it is empty
                     node_id = next(iter(peer_set), None)
         
+        # active edges always point from publisher to subsciber (e.g. from self.connections[node_id] to incoming_connection)
         self._ActivePathsMixin__activate_edge(
             subscription["channel"],
             subscription["subscriber"],
@@ -212,7 +220,8 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                 "chain": chain
             })
         
-        return self._ActivePathsMixin__route_error(error, incoming_connection, recreate_overlay)
+        subscriber_id = self.subscriber_ids[error["channel"]] if error["channel"] in self.subscriber_ids else None
+        return self._ActivePathsMixin__route_error(error, subscriber_id, incoming_connection, recreate_overlay)
     
     def _route_unsubscribe(self, unsubscribe, incoming_connection):
         self._init_channel(unsubscribe["channel"])
@@ -257,8 +266,9 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                     "chain": chain,
                     "aggressive": aggressive
                 })
+        
         if Flooding.settings["AGGRESSIVE_RESUBSCRIBE"] and ordering in ("new", "shorter"):
-            start_subscription_process(True)   
+            start_subscription_process(True)
         
         # abort REflooding if we already know this hashchain
         if advertisement["reflood"] and ordering != "new":
@@ -323,7 +333,8 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         
         # query reflooding in REFLOOD_DELAY seconds if we know alternatives and flood unadvertisements only to those peers we know alternative
         # paths from (so that they can remove us as alternative). if those peers don't know the unadvertised path the flooding will end there
-        if len(alternatives):
+        # only do this if the force flag is not set (force means this master just unpublished)
+        if len(alternatives) and not unadvertisement["force"]:
             logger.info("We know some alternative paths, only flooding unadvertisement to those peers...")
             for con in [con for peer_id, con in self.connections.items() if peer_id in alternatives]:
                 logger.info("Routing unadvertisement for channel '%s' to %s..." % (str(unadvertisement["channel"]), str(con)))
@@ -348,18 +359,18 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection != None else None
         
         # update own routing table to include remote entries
-        for channel, nonce in init["advertisements"].items():
+        for channel, noncelist in init["advertisements"].items():
             self._init_channel(channel)
-            # fake an advertisement message incoming from connection "incoming_connection"
-            self._route_covert_data(Message("%s_advertise" % self.__class__.__name__, {
-                "channel": channel,
-                "nonce": nonce,
-                "reflood": True
-            }), incoming_connection)
+            for nonce in noncelist:
+                # fake an advertisement message incoming from connection "incoming_connection"
+                self._route_covert_data(Message("%s_advertise" % self.__class__.__name__, {
+                    "channel": channel,
+                    "nonce": nonce,
+                    "reflood": True
+                }), incoming_connection)
     
     def _route_data(self, msg, incoming_connection=None):
-        if incoming_connection:     # don't log locally published data (makes the log more clear)
-            logger.info("Routing data: %s coming from %s..." % (str(msg), str(incoming_connection)))
+        logger.info("Routing data: %s coming from %s..." % (str(msg), str(incoming_connection)))
         self._init_channel(msg["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection != None else None
         
@@ -423,8 +434,9 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         peer = command["connection"].get_peer_id()
         
         # anonymize routing tables (we only need a mapping of shortest nonces to channels), and hash + encode nonce for transmission
-        advertisements = {channel: str(base64.b64encode(self._hash(list(noncelist)[0])), "ascii")
-                          for channel, entries in self.advertisement_routing_table.items() for _, noncelist in entries.items() if len(noncelist)}
+        advertisements = {channel:
+                              [str(base64.b64encode(self._hash(list(noncelist)[0])), "ascii") for _, noncelist in entries.items() if len(noncelist)]
+                          for channel, entries in self.advertisement_routing_table.items() if len(entries)}
         
         # exchange routing tables
         logger.info("Sending init message to newly connected peer at %s..." % str(command["connection"]))
@@ -458,6 +470,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             self._route_covert_data(Message("%s_unadvertise" % self.__class__.__name__, {
                 "channel": channel,
                 "chain": str(base64.b64encode(nonce), "ascii"),
+                "force": False,
             }), command["connection"])
     
     def _publish_command(self, command):
@@ -491,13 +504,43 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         else:
             master = list(self.advertisement_routing_table[command["channel"]].keys())[0]
             if Flooding.settings["RANDOM_MASTER_PUBLISH"]:
-                master = SystemRandom.choice(list(self.advertisement_routing_table[command["channel"]].keys()))
+                master = SystemRandom().choice(list(self.advertisement_routing_table[command["channel"]].keys()))
             # send data to randomly choosen master publisher (choosing a new one for every message reduces message loss if one master fails)
             self._route_data(Message("%s_publish" % self.__class__.__name__, {
                 "channel": command["channel"],
                 "data": command["data"],
                 "nonce": str(base64.b64encode(master), "ascii"),
             }))
+    
+    def _unpublish_command(self, command):
+        self._init_channel(command["channel"])
+        if command["channel"] not in self.publishing:
+            return
+        
+        if command["channel"] in self.become_master_timers:
+            self._abort_timer(self.become_master_timers[command["channel"]])
+        
+        if self.master[command["channel"]]:
+            self.master[command["channel"]] = False
+            
+            # deactivate active paths unadvertise our nonces (should be only one in practice)
+            chains = set()
+            for chain in self.advertisement_routing_table[command["channel"]]:
+                for entry in self.advertisement_routing_table[command["channel"]][chain].values():
+                    if None in entry:
+                        chains.add(str(base64.b64encode(chain), "ascii"))   # add chain to list
+            for chain in chains:    # should be only one item in practice
+                # send out unadvertise messages
+                self._route_covert_data(Message("%s_unadvertise" % self.__class__.__name__, {
+                    "channel": command["channel"],
+                    "chain": chain,
+                    "force": True,
+                }))
+                # map publisher nonce to the identifier used by the ActivePathsMixin
+                chain = self._canonize_active_path_identifier(command["channel"], chain)
+                self._ActivePathsMixin__unpublish(command["channel"], chain)
+        
+        self.publishing.discard(command["channel"])
     
     def _subscribe_command(self, command):
         # initialize channel
@@ -557,8 +600,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         
         state = {
             "connections": list(self.connections.values()),
-            "subscriptions": self.subscriptions,
-            "timers": self.timers,
+            "subscriptions": list(self.subscriptions.keys()),
             "publishing": self.publishing,
             "master": self.master,
             "subscriber_ids": self.subscriber_ids,
@@ -609,14 +651,17 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             logger.warning("NOT creating overlay for channel '%s', no known master publisher for this channel..." % str(command["channel"]))
             return
         
-        if self._ActivePathsMixin__active_edges_present(command["channel"], self.subscriber_ids[command["channel"]]):
+        # map publisher nonce to the identifier used by the ActivePathsMixin
+        publisher = self._canonize_active_path_identifier(command["channel"], str(base64.b64encode(chain), "ascii"))
+        
+        if self._ActivePathsMixin__active_edges_present(command["channel"], self.subscriber_ids[command["channel"]], publisher):
             if not command["aggressive"]:
-                logger.info("NOT creating overlay for channel '%s', overlay already created..." % str(command["channel"]))
+                logger.info("NOT creating overlay for channel '%s' to publisher '%s', overlay already created..." % (str(command["channel"]), str(publisher)))
                 return
             else:
-                logger.warning("Aggressively creating overlay for channel '%s' even though the overlay was already created..." % str(command["channel"]))
+                logger.warning("Aggressively creating overlay for channel '%s' to publisher '%s' even though the overlay was already created..." % (str(command["channel"]), str(publisher)))
         
-        logger.info("Creating overlay for channel '%s'..." % str(command["channel"]))
+        logger.info("Creating overlay for channel '%s' to publisher '%s'..." % (str(command["channel"]), str(publisher)))
         
         # calculate edge version
         self.edge_version += 1

@@ -67,15 +67,21 @@ class ActivePathsMixin(object):
                     if self.__reverse_edges[channel][subscriber][publisher]["peer"] == peer:
                         del self.__reverse_edges[channel][subscriber][publisher]
     
+    def __unpublish(self, channel, publisher):
+        self._route_covert_data(Message("%s_unpublish" % self.__class__.__name__, {
+            "channel": channel,
+            "publisher": publisher
+        }))
+    
     def __get_next_hops(self, channel, incoming_peer=None):
         # calculate list of next nodes to route a (data) messages to according to the active edges (and don't return our incoming peer here)
         return set(con for node_id, con in self.connections.items() if
                 node_id in set(itemgetter("peer")(entry) for entry in self.__active_edges[channel].values()) and
                 node_id != incoming_peer)
     
-    def __active_edges_present(self, channel, subscriber):
-        return (subscriber in self.__reverse_edges[channel] and
-        len(set(itemgetter("peer")(entry) for entry in self.__reverse_edges[channel][subscriber].values())))
+    def __active_edges_present(self, channel, subscriber, publisher=None):
+        return (subscriber in self.__reverse_edges[channel] and len(
+        set(itemgetter("peer")(entry) for pub, entry in self.__reverse_edges[channel][subscriber].items() if pub == publisher or publisher == None)))
     
     def __get_known_publishers(self, channel):
         retval = set()
@@ -118,7 +124,7 @@ class ActivePathsMixin(object):
                         "subscriber": subscriber,
                         "publisher": publisher,
                         # this has to be the version of the old edge, not the one of our new edge!
-                        "version": self.reverse_edges[channel][subscriber][publisher]["version"]
+                        "version": self.__reverse_edges[channel][subscriber][publisher]["version"]
                     }))
             # always increment edge versions, never decrement
             if (publisher not in self.__reverse_edges[channel][subscriber] or
@@ -197,14 +203,14 @@ class ActivePathsMixin(object):
             logger.info("Routing teardown to %s..." % str(self.connections[node_id]))
             self._send_covert_msg(teardown, self.connections[node_id])
     
-    def __route_error(self, error, incoming_connection, callback=None):
+    def __route_error(self, error, subscriber_id, incoming_connection, callback=None):
         logger.info("Routing error: %s coming from %s..." % (str(error), str(incoming_connection)))
         self.__init_channel(error["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
         
         # recreate broken overlay if needed (we subscribed the channel and incoming_peer is a reverse active edge)
         # edge versions are not relevant here
-        if error["channel"] in self.subscriptions and error["subscriber"] == self.subscriber_ids[error["channel"]]:
+        if subscriber_id and error["subscriber"] == subscriber_id:
             if incoming_peer in set(itemgetter("peer")(entry) for entry in
             self.__reverse_edges[error["channel"]][error["subscriber"]].values()):
                 logger.warning("Received error, tearing down broken path to publisher %s on channel '%s'..." % (str(error["publisher"]), str(error["channel"])))
@@ -246,4 +252,31 @@ class ActivePathsMixin(object):
         # edge versions not relevant here
         if unsubscribe["subscriber"] in self.__reverse_edges[unsubscribe["channel"]]:
             del self.__reverse_edges[unsubscribe["channel"]][unsubscribe["subscriber"]]
+    
+    def __route_unpublish(self, unpublish, publishing_myself, incoming_connection):
+        logger.info("Routing unpublish: %s coming from %s..." % (str(unpublish), str(incoming_connection)))
+        self.__init_channel(unpublish["channel"])
+        incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
+        
+        # get next hops to route unpublish message to
+        connections = self.__get_next_hops(unpublish["channel"], incoming_peer)
+        
+        # delete all reverse active edges to this publisher
+        for subscriber in list(self.__reverse_edges[unpublish["channel"]].keys()):
+            if unpublish["publisher"] in self.__reverse_edges[unpublish["channel"]][subscriber]:
+                del self.__reverse_edges[unpublish["channel"]][subscriber][unpublish["publisher"]]
+                if not len(self.__reverse_edges[unpublish["channel"]][subscriber]):
+                    del self.__reverse_edges[unpublish["channel"]][subscriber]
+        
+        # delete active edges to subscribers (but only if we have no more reverse edges pointing to other publishers
+        # AND we are not a publisher ourselves)
+        for subscriber in list(self.__active_edges[unpublish["channel"]].keys()):
+            if not publishing_myself and (
+            subscriber not in self.__reverse_edges[unpublish["channel"]] or not len(self.__reverse_edges[unpublish["channel"]][subscriber])):
+                del self.__active_edges[unpublish["channel"]][subscriber]
+        
+        # route unpublish message further along the active edges to all subscribers
+        for con in connections:
+            logger.info("Routing unpublish to %s..." % str(con))
+            self._send_covert_msg(unpublish, con)
     

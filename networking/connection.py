@@ -29,6 +29,7 @@ class Connection(object):
     node_id = None
     router_queue = None
     listener = None
+    event_queue = None
     instances_lock = RLock()
     instances = {}
     len_size = len(struct.pack("!Q", 0))	# calculate length of packed unsigned long long int
@@ -42,16 +43,24 @@ class Connection(object):
     
     # public static method to initialize networking
     @staticmethod
-    def init(node_id, queue, host):
+    def init(node_id, queue, host, event_queue=None):
         Connection.reconnections_stopped.clear()    # clear shutdown flag
         Connection.node_id = node_id
         Connection.router_queue = queue
         Connection.listener = Listener(node_id, host)
+        Connection.event_queue = event_queue
     
     # public static factory method for new outgoing instances
     @staticmethod
     def connect_to(host, reconnect_try=0):
         return Connection._new((host, 9999), True, reconnect_try)
+    
+    @staticmethod
+    def disconnect_from(host):
+        addr = (host, 9999)
+        with Connection.instances_lock:
+            if str(addr) in Connection.instances:
+                Connection.instances[str(addr)].terminate()
     
     # internal static factory method for incoming packets used by listener class
     @staticmethod
@@ -113,6 +122,7 @@ class Connection(object):
         
         self.logger.info("Initializing new connection with %s (connect #%s)" % (str(self.addr), str(self.reconnect_try)))
         if self.active_init:
+            Connection.event_queue.put({"type": "connecting", "data": {"addr": str(self.addr[0]), "active_init": self.active_init}})
             self._send_init_msg("SYN")
         
         # init watchdog thread to terminate connection after MAX_MISSING_PINGS consecutive failures to receive a ping
@@ -139,6 +149,7 @@ class Connection(object):
         if self.reconnect_thread and self.reconnect_thread != current_thread():
             self.reconnect_thread.join()
         self.logger.info("Connection terminated successfully...")
+        Connection.event_queue.put({"type": "disconnected", "data": {"addr": str(self.addr[0]), "active_init": self.active_init}})
     
     def send_msg(self, msg):
         if self.is_dead.is_set():
@@ -203,6 +214,7 @@ class Connection(object):
         self.pinger_thread = Thread(name="local::"+Connection.node_id+"::_pinger", target=self._pinger)
         self.pinger_thread.start()
         self.logger.info("Connection with %s initialized" % str(self.addr))
+        Connection.event_queue.put({"type": "connected", "data": {"addr": str(self.addr[0]), "active_init": self.active_init}})
     
     # *** middle level stuff ***
     # this is called by our listener for every incoming raw udp packet
@@ -210,6 +222,7 @@ class Connection(object):
         self.logger.debug("incoming packet(%s): %s" % (str(len(packet)), str(packet)))
         if not self.connection_state == "ESTABLISHED":  # init phase (unencrypted)
             if self.connection_state == "IDLE" and packet[:3] == b"SYN":
+                Connection.event_queue.put({"type": "connecting", "data": {"addr": str(self.addr[0]), "active_init": self.active_init}})
                 self.peer_id = packet[3:39].decode("ascii")
                 self._derive_key(packet[39:])
                 self._send_init_msg("SYN-ACK")
