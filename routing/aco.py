@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 # own classes
 from networking import Message
 from utils import init_mixins, final
-from .base import Router
+from .router import Router
 from .active_paths_mixin import ActivePathsMixin
 from .probabilistic_forwarding_mixin import ProbabilisticForwardingMixin
 
@@ -226,7 +226,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             
             # add new active edge of version ant["version"] if this ant is an activating one
             if ant["activating"]:
-                self._ActivePathsMixin__activate_edge(ant["channel"], ant["subscriber"], ant["publisher"], ant["version"], incoming_connection, self.connections[next_node])
+                self._ActivePathsMixin__activate_edge(ant["channel"], ant["subscriber"], ant["publisher"], ant["version"], incoming_connection, self.connections[next_node] if next_node else None)
             
             # some sanity checks
             if returned:
@@ -359,7 +359,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             "ActivePathsMixin": self._ActivePathsMixin__dump_state(),
         }
         logger.info("INTERNAL STATE:\n%s" % str(state))
-        if command and callback in command and command["callback"]:
+        if command and "callback" in command and command["callback"]:
             command["callback"](state)
     
     # *** the following commands are internal to ACO ***

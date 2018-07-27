@@ -1,5 +1,4 @@
 import socket
-import queue
 from threading import Thread, current_thread
 import logging
 logger = logging.getLogger(__name__)

@@ -13,6 +13,8 @@ import time
 import control
 import networking
 import routing
+import leds
+import filters
 
 
 # parse commandline
@@ -33,8 +35,9 @@ logger_config["handlers"]["stderr"]["level"] = args.log
 logger_config["handlers"]["queue"]["queue"] = event_queue
 logging.config.dictConfig(logger_config)
 logger = logging.getLogger()
-logger.info('Logger configured')
+logger.info('Logger configured...')
 
+# start http server
 server = control.Server(args.listen, event_queue, command_queue)
 
 # initialize global vars
@@ -62,6 +65,7 @@ signal.signal(signal.SIGINT, sigint_handler)
 # our mainloop and some aux functions it uses
 node_id = str(uuid.uuid4())
 logger.info("My node id is now '%s'..." % node_id)
+all_leds = leds.init(node_id, event_queue)
 to_publish = {}
 received = {}
 def apply_settings(data, path, apply_to):
@@ -105,7 +109,7 @@ while True:
         #logger.debug("main command queue empty")
         continue
     if command["_command"][:1] != "_":       # don't log internal commands
-        logger.info("Got GUI command: %s" % str(command))
+        logger.debug("Got GUI command: %s" % str(command))
     if command["_command"] == "start":
         if not router:
             # try to determine router class
@@ -124,6 +128,7 @@ while True:
             queue = Queue()
             networking.Connection.init(node_id, queue, args.listen, event_queue)
             router = router_class(node_id, queue)
+            filters.update_attributes({"router": router})
         else:
             fail_command(command, "Cannot start new router '%s': old router still initialized" % str(command["router"]))
     elif command["_command"] == "stop":
@@ -135,7 +140,7 @@ while True:
         to_publish = {}
         received = {}
     elif command["_command"] == "reset":
-        logger.info("GUI command completed: %s" % str(command["_id"]))
+        logger.debug("GUI command completed: %s" % str(command["_id"]))
         event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
         command_queue.task_done()
         time.sleep(1);          # wait some time to deliver pending events via SSE
@@ -177,11 +182,16 @@ while True:
             event_queue.put({"type": "state", "data": state})
         if router:
             router.dump(cb)
+    elif command["_command"] == "load_filters":
+        # load filter definitions
+        retval = filters.load(command["code"], {"leds": all_leds, "router": router})
+        if retval:
+            fail_command(command, retval)
     elif command["_command"] == "_new_http_client":
         event_queue.put({"type": "node_id", "data": {"node_id": node_id}})
     else:
         fail_command(command, "Ignoring unknown GUI command: %s" % str(command["_id"]))
     if command["_command"][:1] != "_" and not command_failed:       # don't ack internal or failed commands
-        logger.info("GUI command completed: %s" % str(command["_id"]))
+        logger.debug("GUI command completed: %s" % str(command["_id"]))
         event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
     command_queue.task_done()

@@ -1,13 +1,37 @@
 import cherrypy
+from functools import wraps
 from pathlib import Path
 from threading import Thread
 from logging import LogRecord
+import uuid
 import os
 import queue
 import json
 import logging
 logger = logging.getLogger(__name__)
 
+# needed for pretty serialisation
+from networking import Connection
+
+class ComplexJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return list(obj)
+        if isinstance(obj, Connection):
+            return str(obj)
+        return repr(obj)
+
+def handle_cors(func):
+    @wraps(func)
+    def with_cors(*args, **kwargs):
+        if "Origin" in cherrypy.request.headers:
+            cherrypy.response.headers["Access-Control-Allow-Origin"] = cherrypy.request.headers["Origin"]
+        if "Access-Control-Request-Method" in cherrypy.request.headers:
+            cherrypy.response.headers["Access-Control-Allow-Methods"] = cherrypy.request.headers["Access-Control-Request-Method"]
+        if "Access-Control-Request-Headers" in cherrypy.request.headers:
+            cherrypy.response.headers["Access-Control-Allow-Headers"] = cherrypy.request.headers["Access-Control-Request-Headers"]
+        return func(*args, **kwargs)
+    return with_cors
 
 class Server(object):
     def __init__(self, addr, event_queue, command_queue):
@@ -46,48 +70,51 @@ class Server(object):
         logger.debug("cherrypy master thread terminating...")
     
     @cherrypy.expose
+    @handle_cors
     def events(self):
-        cherrypy.response.headers["Content-Type"] = "text/event-stream"
-        self.command_queue.put({"_command": "_new_http_client"})
-        def content():
-            if self.in_generator:
-                self.event_queue.put(None)  # wakeup and stop OLD events generator function
-            self.in_generator = True
-            try:
-                while True:
-                    try:
-                        event = self.event_queue.get(True, 4)        # 4 seconds timeout
-                        if not event:
-                            logger.debug("Stopping generator function!")
-                            return
-                        elif isinstance(event, LogRecord):
-                            yield "event: log\n"
-                            yield "data: "
-                            yield json.dumps(event.__dict__, separators=(',',':'))
-                            yield "\n\n"
-                        elif isinstance(event, str):
-                            yield "event: "
-                            yield event
-                            yield "\n\n"
-                        elif isinstance(event, dict):
-                            yield "event: "
-                            yield event["type"]
-                            yield "\n"
-                            yield "data: "
-                            yield json.dumps(event["data"], separators=(',',':'))
-                            yield "\n\n"
-                        self.event_queue.task_done()
-                    except queue.Empty:
-                        yield ":ping\n\n"
-            except GeneratorExit:
-                pass
-            self.in_generator = False
-        return content()
+        if cherrypy.request.method == "GET":
+            cherrypy.response.headers["Content-Type"] = "text/event-stream"
+            self.command_queue.put({"_command": "_new_http_client"})
+            def content():
+                if self.in_generator:
+                    self.event_queue.put(None)  # wakeup and stop OLD events generator function
+                self.in_generator = True
+                logger.debug("Starting SSE stream...")
+                try:
+                    while True:
+                        try:
+                            event = self.event_queue.get(True, 4)        # 4 seconds timeout
+                            if not event:
+                                logger.debug("Stopping SSE stream...")
+                                return
+                            elif isinstance(event, LogRecord):
+                                yield "data: "
+                                yield json.dumps({"event": "log", "data": event.__dict__}, separators=(',',':'))
+                                yield "\n\n"
+                            elif isinstance(event, str):
+                                yield "data: "
+                                yield json.dumps({"event": event}, separators=(',',':'), cls=ComplexJSONEncoder)
+                                yield "\n\n"
+                            elif isinstance(event, dict):
+                                yield "data: "
+                                yield json.dumps({"event": event["type"], "data": event["data"]}, separators=(',',':'), cls=ComplexJSONEncoder)
+                                yield "\n\n"
+                            self.event_queue.task_done()
+                        except queue.Empty:
+                            yield ":ping\n\n"       # this will be an sse comment
+                except GeneratorExit:
+                    pass
+                self.in_generator = False
+            return content()
     events._cp_config = {'response.stream': True}
     
     @cherrypy.expose
     @cherrypy.tools.json_in()
+    @handle_cors
     def command(self):
-        cherrypy.response.headers["Content-Type"] = "text/plain"
-        self.command_queue.put(cherrypy.request.json)
-        return "OK"
+        if cherrypy.request.method == "POST":
+            cherrypy.response.headers["Content-Type"] = "text/plain"
+            cherrypy.request.json["_id"] = str(uuid.uuid4())
+            self.command_queue.put(cherrypy.request.json)
+            return "OK\n%s" % cherrypy.request.json["_id"]
+        return

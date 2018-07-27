@@ -82,7 +82,7 @@ class Router(object):
     # *** internal api methods for child classes ***
     # _send_msg() and _send_covert_msg() are used by child classes for rate limited sending of messages (for routing demonstration purposes)
     def _send_msg(self, msg, con):
-        if not filters.msg_outgoing(msg, con):      # call filters framework
+        if not filters.msg_outgoing(msg, con):              # call filters framework
             self.__outgoing("data", msg, con)
     
     def _send_covert_msg(self, msg, con):
@@ -90,11 +90,11 @@ class Router(object):
             self.__outgoing("covert_data", msg, con)
     
     def _add_timer(self, timeout, command):
-        timeout *= Router.settings["TIMING_FACTOR"]     # delay timer for demonstrating purposes
+        timeout *= Router.settings["TIMING_FACTOR"]         # delay timer for demonstrating purposes
         timer_id = str(uuid.uuid4())
         with self.timers_condition:
             self.timers.add({"timeout": datetime.now().timestamp() + timeout, "id": timer_id, "command": command})
-            self.timers_condition.notify()      # notify timers thread of changes
+            self.timers_condition.notify()                  # notify timers thread of changes
         return timer_id
     
     def _abort_timer(self, timer_id):

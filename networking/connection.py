@@ -3,7 +3,7 @@ import base64
 import binascii
 import struct
 from collections import deque
-from threading import Thread, Event, RLock, current_thread, Timer
+from threading import Thread, Event, RLock, current_thread
 
 #crypto imports
 from cryptography.hazmat.backends import default_backend

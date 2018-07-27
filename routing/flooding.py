@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import hashes
 # own classes
 from networking import Message
 from utils import init_mixins, final
-from .base import Router
+from .router import Router
 from .active_paths_mixin import ActivePathsMixin
 from .probabilistic_forwarding_mixin import ProbabilisticForwardingMixin
 

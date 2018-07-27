@@ -35,7 +35,7 @@
 		"networking": {
 			"level": "INFO"
 		},
-		"routing.base": {
+		"routing.router": {
 			"level": "INFO"
 		},
 		"cherrypy.access": {

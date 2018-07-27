@@ -2,38 +2,57 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-# *** these filters do NOT see ping messages, nor do routers see them ***
+# global instance of our filter definitions
+filters = None
+
+# base class for filter classes
+class Base(object):
+    pass
+
+# update filter class attributes
+def update_attributes(attributes):
+    global filters
+    if filters:
+        for key, value in attributes.items():
+            setattr(filters, key, value)
+
+# load and instantiate filter class
+def load(code, attributes):
+    global filters
+    loc = {"Base": Base}
+    try:
+        filters = None
+        exec(code, globals(), loc)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as e:
+        return "Error loading filter definitions: %s" % str(e)
+    if "Filters" in loc:
+        filters = loc["Filters"]()
+        filters.logger = logger         # let it use our logger
+        update_attributes(attributes)
+
+
+# proxy functions
+
+def proxy(name, msg, con):
+    global filters
+    try:
+        if filters and hasattr(filters, name):
+            return getattr(filters, name)(msg, con)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as e:
+        logger.error("Error calling filter 'covert_msg_incoming': %s" % str(e))
 
 def covert_msg_incoming(msg, con):
-    # example to indicate incoming ant
-    if msg.get_type() == "ACO_ant":
-        # do something meaningful here
-        logger.error("received ant %s" % msg["id"])
-    
-    # example to indicate incoming returning ant
-    if msg.get_type() == "ACO_ant" and msg["returning"]:
-        # do something meaningful here
-        logger.error("returning ant coming from peer %s" % con.get_peer_id())
+    return proxy("covert_msg_incoming", msg, con)
 
 def covert_msg_outgoing(msg, con):
-    # example to indicate outgoing ant
-    if msg.get_type() == "ACO_ant":
-        # do something meaningful here
-        logger.error("sending out ant %s" % msg["id"])
-    
-    # example to indicate outgoing returning activating ant
-    if msg.get_type() == "ACO_ant" and msg["returning"] and msg["activating"]:
-        # do something meaningful here
-        logger.error("sending returning and activating ant to peer %s" % con.get_peer_id())
+    return proxy("covert_msg_outgoing", msg, con)
 
 def msg_incoming(msg, con):
-    # example to indicate incoming data on channel "test"
-    if msg.get_type() == "ACO_data" and msg["channel"] == "test":
-        # do something meaningful here
-        logger.error("received data on channel 'test' from peer %s" % con.get_peer_id())
+    return proxy("msg_incoming", msg, con)
 
 def msg_outgoing(msg, con):
-    # example to indicate outgoing data on channel "test"
-    if msg.get_type() == "ACO_data" and msg["channel"] == "test":
-        # do something meaningful here
-        logger.error("sending data on channel 'test' to peer %s" % con.get_peer_id())
+    return proxy("msg_outgoing", msg, con)

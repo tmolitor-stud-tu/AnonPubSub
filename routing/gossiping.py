@@ -4,7 +4,7 @@ logger = logging.getLogger(__name__)
 
 # own classes
 from networking import Message
-from .base import Router
+from .router import Router
 
 
 class Gossiping(Router):
