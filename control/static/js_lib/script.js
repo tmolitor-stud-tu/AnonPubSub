@@ -525,7 +525,7 @@ var create_overlay = function(data) {
 
 window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//wait for lesscss rendering AND dom load
 	//header window
-	var load_filters = function() {
+	var load_filters = function(silence_errors) {
 		var file = $("#filterFileInput").get(0).files[0];
 		if(!file)
 			return;
@@ -536,7 +536,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 			var error_seen = false;		//all errors are identical --> show only one of them
 			$.each(nodes, function(_, node) {
 				promises.push(send_command(node.data.ip, "load_filters", {"code": reader.result}).catch(function(err) {
-					if(!error_seen)
+					if(!error_seen && (typeof(silence_errors)=="undefined" || !silence_errors))
 						alert(err);
 					error_seen = true;
 				}));
@@ -606,7 +606,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 				$("#start").prop("disabled", false);
 				$("#save").prop("disabled", false);
 				$(".grid-status .status").text("IDLE");
-				load_filters();		// (re)load filters (could be lost after resetting nodes)
+				load_filters(true);		// (re)load filters (could be lost after resetting nodes)
 			} catch(e) {
 				set_error_status();
 				alert("Error loading file: "+e);
@@ -648,7 +648,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 		};
 		downloadString(JSON.stringify(graph, null, 2), "text/json", "graph.json");
 	});
-	$("#filterFileInput").change(load_filters);
+	$("#filterFileInput").change(function() { load_filters(); });
 	$("#load-filters").click(function() {
 		$("#filterFileInput").click();
 	});
@@ -691,7 +691,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 		//let startup complete before trying to connect nodes
 		Promise.all(promises.map(reflect)).then(function() {
 			$(".grid-status .status").text("Connecting nodes...");
-			load_filters();		// (re)load filters (could be lost after resetting nodes)
+			load_filters(true);		// (re)load filters (could be lost after resetting nodes)
 			promises = [];
 			$.each(connections, function(_, connection) {
 				var source_node = $(document.getElementById(connection.sourceId)).data("node");
@@ -821,6 +821,25 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 		}).finally(function() {
 			//disable node-settings start button
 			node.data.settings.find(".actions .start").prop("disabled", true);
+			
+			//assign roles after waiting some additional 2 seconds to make sure everything settled down properly
+			window.setTimeout(function() {
+				var roles = node.data.roles;
+				$.each(roles, function(type, channels) {
+					if(type == "subscriber")
+						$.each(channels, function(_, channel) {
+							send_command(node.data.ip, "subscribe", {
+								"channel": channel
+							});
+						});
+					else if(type == "publisher")
+						$.each(channels, function(_, channel) {
+							send_command(node.data.ip, "publish", {
+								"channel": channel
+							});
+						});
+				});
+			}, 2000);
 		});
 	});
 	$(document).on("click", ".node-settings .actions .stop", function() {

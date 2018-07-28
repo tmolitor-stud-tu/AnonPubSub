@@ -172,7 +172,7 @@
 				</tr>
 				<tr title="Maintain overlay every 'x' seconds (e.g. start new ant rounds). Set this to zero to deactivate automatic maintenance">
 					<td>Ant maintenance time:</td>
-					<td><input type="number" value="0" min="1" max="3600" step="1" class="setting" data-setting="routing.ACO.ANT_MAINTENANCE_TIME"></td>
+					<td><input type="number" value="0" min="0" max="3600" step="1" class="setting" data-setting="routing.ACO.ANT_MAINTENANCE_TIME"></td>
 				</tr>
 				<tr title="Completely tear down old active paths (or path fragments) if a new active path is found and activated">
 					<td>Aggressive teardown:</td>
@@ -197,7 +197,7 @@
 				</tr>
 				<tr title="Time to wait before REflooding advertisements for alternative paths upon receiving an unadvertise message">
 					<td>Reflood delay:</td>
-					<td><input type="number" value="2.0" min="1" max="10.0" step="0.5" class="setting" data-setting="routing.Flooding.REFLOOD_DELAY"></td>
+					<td><input type="number" value="2.0" min="0" max="10.0" step="0.5" class="setting" data-setting="routing.Flooding.REFLOOD_DELAY"></td>
 				</tr>
 				<tr title="This setting determines if secondary publishers should publish to a randomly selected master publisher or publish to the same master every time (the first one seen for this channel)">
 					<td>Random master publish:</td>
@@ -205,7 +205,7 @@
 				</tr>
 				<tr title="Time to wait before subscribing after receiving advertisements for a channel we are interested in (this gives slower but shorter routing paths a change to catch up and being used in the subscription)">
 					<td>Subscribe delay:</td>
-					<td><input type="number" value="2.0" min="0.1" max="10.0" step="0.1" class="setting" data-setting="routing.Flooding.SUBSCRIBE_DELAY"></td>
+					<td><input type="number" value="2.0" min="0" max="10.0" step="0.1" class="setting" data-setting="routing.Flooding.SUBSCRIBE_DELAY"></td>
 				</tr>
 				<tr title="Completely tear down old active paths (or path fragments) if a new active path is found and activated">
 					<td>Aggressive teardown:</td>
@@ -217,11 +217,11 @@
 				</tr>
 				<tr title="Minimum time to wait before we try to become a new master (we only become a master if we don't know any master for the channel after waiting)">
 					<td>Min become master delay:</td>
-					<td><input type="number" value="1.0" min="1.0" max="20.0" step="0.5" class="setting" data-setting="routing.Flooding.MIN_BECOME_MASTER_DELAY"></td>
+					<td><input type="number" value="4.0" min="0" max="20.0" step="0.5" class="setting" data-setting="routing.Flooding.MIN_BECOME_MASTER_DELAY"></td>
 				</tr>
 				<tr title="Maximum time to wait before we try to become a new master (we only become a master if we don't know any master for the channel after waiting)">
 					<td>Max become master delay:</td>
-					<td><input type="number" value="8.0" min="1.0" max="20.0" step="0.5" class="setting" data-setting="routing.Flooding.MAX_BECOME_MASTER_DELAY"></td>
+					<td><input type="number" value="8.0" min="0" max="20.0" step="0.5" class="setting" data-setting="routing.Flooding.MAX_BECOME_MASTER_DELAY"></td>
 				</tr>
 				<tr title="Fraction of neighbours to select for probabilistic forwarding">
 					<td>Probabilistic forwarding fraction:</td>

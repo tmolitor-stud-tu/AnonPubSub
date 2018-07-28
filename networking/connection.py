@@ -207,14 +207,14 @@ class Connection(object):
         # our connection is now established, inform router of the new connection and activate pinger thread
         self.connection_state = "ESTABLISHED"
         self.reconnect_try = 0  # connection successful, reset reconnection counter
-        Connection.router_queue.put({
-            "_command": "add_connection",
-            "connection": self
-        })
         self.pinger_thread = Thread(name="local::"+Connection.node_id+"::_pinger", target=self._pinger)
         self.pinger_thread.start()
         self.logger.info("Connection with %s initialized" % str(self.addr))
         Connection.event_queue.put({"type": "connected", "data": {"addr": str(self.addr[0]), "active_init": self.active_init}})
+        Connection.router_queue.put({
+            "_command": "add_connection",
+            "connection": self
+        })
     
     # *** middle level stuff ***
     # this is called by our listener for every incoming raw udp packet

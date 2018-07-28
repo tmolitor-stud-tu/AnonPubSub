@@ -1,5 +1,6 @@
 
 # *** these filters do NOT see ping messages, nor do routers see them ***
+# *** global imports are NOT accessible, do imports in __init__ and bind them to an attribute ***
 
 class Filters(Base):
     def __init__(self):
@@ -10,6 +11,9 @@ class Filters(Base):
             "blue": (0,0,255),
             "white": (255,255,255)
         }
+        # some imports used
+        self.random = __import__("random")
+        
     def covert_msg_incoming(self, msg, con):
         ## example to indicate incoming ant
         #if msg.get_type() == "ACO_ant":
@@ -43,8 +47,7 @@ class Filters(Base):
         self.leds[3].on(self.colors["blue"], 0.5)
         if self.router.__class__.__name__ == "Flooding" and self.router.master[msg["channel"]]:
             return False
-        import random
-        drop = random.choice([True, False])
-        if drop:
-            self.leds[1].on(self.colors["white"], 0.5)
-        return drop     # this will drop the message in 50% of the cases
+        #drop = self.random.choice([True, False])
+        #if drop:
+            #self.leds[1].on(self.colors["white"], 0.5)
+        #return drop     # this will drop the message in 50% of the cases

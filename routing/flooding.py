@@ -165,6 +165,10 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection != None else None
         chain = base64.b64decode(bytes(subscription["chain"], "ascii"))    # decode nonce
         
+        if subscription["subscriber"] == self.subscriber_ids[command["channel"]]:
+            logger.error("Received own subscription, dropping it to prevent loop!")
+            return
+        
         # look up local hashchain identifier
         chain = self._find_nonce(chain, self.advertisement_routing_table[subscription["channel"]])
         
@@ -305,7 +309,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             return
         logger.debug("Found chain '%s' for unadvertisement of channel '%s'..." % (str(base64.b64encode(chain), "ascii"), unadvertisement["channel"]))
         
-        # remove ALL nonces of this hashchain pointing to the incoming peer
+        # remove ALL nonces of this hashchain pointing to the incoming peer and build an alternative peer list
         alternatives = set()
         was_known = False
         for nonce, peer_set in dict(self.advertisement_routing_table[unadvertisement["channel"]][chain].items()).items():
@@ -328,7 +332,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             logger.debug("We are the master for this hashchain, aborting unadvertisement flooding...")
             return
         
-        # remove peers we don't have connections to from our alternatives (we want to be on the safe side)
+        # remove peers we don't have connections to from our alternatives list (we want to be on the safe side)
         alternatives.intersection_update(set(self.connections.keys()))
         
         # query reflooding in REFLOOD_DELAY seconds if we know alternatives and flood unadvertisements only to those peers we know alternative

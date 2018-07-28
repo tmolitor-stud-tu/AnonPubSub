@@ -7,7 +7,17 @@ filters = None
 
 # base class for filter classes
 class Base(object):
-    pass
+    def __init__(self, logger):
+        self.logger = logger
+    
+    def covert_msg_incoming(self, msg, con):
+        pass
+    def covert_msg_outgoing(self, msg, con):
+        pass
+    def msg_incoming(self, msg, con):
+        pass
+    def msg_outgoing(self, msg, con):
+        pass
 
 # update filter class attributes
 def update_attributes(attributes):
@@ -28,9 +38,12 @@ def load(code, attributes):
     except Exception as e:
         return "Error loading filter definitions: %s" % str(e)
     if "Filters" in loc:
-        filters = loc["Filters"]()
-        filters.logger = logger         # let it use our logger
-        update_attributes(attributes)
+        f = loc["Filters"](logger)                  # let it use our logger
+        for key, value in attributes.items():       # set all attributes
+            setattr(filters, key, value)
+        filters = f                                 # only update global variable after properly initializing the newly created filters instance
+    else:
+        return "Error loading filter definitions: No class definition for 'Filters' found!"
 
 
 # proxy functions
@@ -43,7 +56,7 @@ def proxy(name, msg, con):
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:
-        logger.error("Error calling filter 'covert_msg_incoming': %s" % str(e))
+        logger.error("Error calling filter '%s': %s" % (name, str(e)))
 
 def covert_msg_incoming(msg, con):
     return proxy("covert_msg_incoming", msg, con)

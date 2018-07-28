@@ -178,6 +178,10 @@ class Router(object):
         # clone message object to decouple it from changes the caller does after "sending it out"
         command = {"_command": "Router__real_send", "type": msg_type, "message": Message(msg), "connection": con}
         
+        if not Router.settings["OUTGOING_TIME"]:        # no delay wanted at all --> call __real_send directly
+            self._call_command(command)
+            return
+        
         # calculate next send time and update timestamps
         peer = con.get_peer_id()
         if peer not in self.last_outgoing_time:
