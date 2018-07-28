@@ -30,20 +30,21 @@ def update_attributes(attributes):
 def load(code, attributes):
     global filters
     loc = {"Base": Base}
+    filters = None
+    f = None
     try:
-        filters = None
-        exec(code, globals(), loc)
+        exec(code, {}, loc)
+        if "Filters" in loc:
+            f = loc["Filters"](logger)                  # let it use our logger
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:
-        return "Error loading filter definitions: %s" % str(e)
-    if "Filters" in loc:
-        f = loc["Filters"](logger)                  # let it use our logger
-        for key, value in attributes.items():       # set all attributes
-            setattr(filters, key, value)
-        filters = f                                 # only update global variable after properly initializing the newly created filters instance
-    else:
+        return "Exception loading filter definitions: %s" % str(e)
+    if not f:
         return "Error loading filter definitions: No class definition for 'Filters' found!"
+    for key, value in attributes.items():       # set all attributes
+        setattr(f, key, value)
+    filters = f                                 # only update global variable after properly initializing the newly created filters instance
 
 
 # proxy functions

@@ -165,7 +165,8 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection != None else None
         chain = base64.b64decode(bytes(subscription["chain"], "ascii"))    # decode nonce
         
-        if subscription["subscriber"] == self.subscriber_ids[command["channel"]]:
+        # avoid loops
+        if incoming_connection and subscription["channel"] in self.subscriber_ids and subscription["subscriber"] == self.subscriber_ids[subscription["channel"]]:
             logger.error("Received own subscription, dropping it to prevent loop!")
             return
         

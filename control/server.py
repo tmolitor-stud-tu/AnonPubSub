@@ -1,7 +1,7 @@
 import cherrypy
 from functools import wraps
 from pathlib import Path
-from threading import Thread
+from threading import Thread, Event
 from logging import LogRecord
 import uuid
 import os
@@ -38,7 +38,8 @@ class Server(object):
         self.addr = addr
         self.event_queue = event_queue
         self.command_queue = command_queue
-        self.in_generator = False
+        self.no_generator_running = Event()
+        self.no_generator_running.set()
         self.base = "%s/static" % os.path.dirname(os.path.realpath(__file__))
         self.cherrypy_thread = Thread(name="local::cherrypy_master", target=self._run)
         self.cherrypy_thread.start()
@@ -76,9 +77,14 @@ class Server(object):
             cherrypy.response.headers["Content-Type"] = "text/event-stream"
             self.command_queue.put({"_command": "_new_http_client"})
             def content():
-                if self.in_generator:
+                if not self.no_generator_running.is_set():
+                    logger.debug("Sending stop signal to old SSE generator...")
                     self.event_queue.put(None)  # wakeup and stop OLD events generator function
-                self.in_generator = True
+                # wait for generator being stopped
+                logger.debug("Waiting for old SSE generator to exit...")
+                while not self.no_generator_running.wait(60):
+                    pass
+                self.no_generator_running.clear()
                 logger.debug("Starting SSE stream...")
                 try:
                     while True:
@@ -86,7 +92,7 @@ class Server(object):
                             event = self.event_queue.get(True, 4)        # 4 seconds timeout
                             if not event:
                                 logger.debug("Stopping SSE stream...")
-                                return
+                                break
                             elif isinstance(event, LogRecord):
                                 yield "data: "
                                 yield json.dumps({"event": "log", "data": event.__dict__}, separators=(',',':'))
@@ -104,7 +110,8 @@ class Server(object):
                             yield ":ping\n\n"       # this will be an sse comment
                 except GeneratorExit:
                     pass
-                self.in_generator = False
+                self.no_generator_running.set()
+                logger.debug("SSE stream stopped...")
             return content()
     events._cp_config = {'response.stream': True}
     
