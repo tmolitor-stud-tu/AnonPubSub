@@ -236,13 +236,14 @@ class ActivePathsMixin(object):
         self.__init_channel(unsubscribe["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
         
-        # route unsubscribe message along all reverse active edges to all publishers
-        # edge versions not elevant here
-        for node_id in set(itemgetter("peer")(entry) for entry in
-        self.__reverse_edges[unsubscribe["channel"]][unsubscribe["subscriber"]].values()):
-            if node_id in self.connections:
-                logger.info("Routing unsubscribe to %s..." % str(self.connections[node_id]))
-                self._send_covert_msg(unsubscribe, self.connections[node_id])
+        # route unsubscribe message along all reverse active edges to all publishers (only if there are reverse edges, of course)
+        # edge versions not relevant here
+        if unsubscribe["subscriber"] in self.__reverse_edges[unsubscribe["channel"]]:
+            for node_id in set(itemgetter("peer")(entry) for entry in
+            self.__reverse_edges[unsubscribe["channel"]][unsubscribe["subscriber"]].values()):
+                if node_id in self.connections:
+                    logger.info("Routing unsubscribe to %s..." % str(self.connections[node_id]))
+                    self._send_covert_msg(unsubscribe, self.connections[node_id])
         
         # delete active edge to this subscriber
         if unsubscribe["subscriber"] in self.__active_edges[unsubscribe["channel"]]:
