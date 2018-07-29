@@ -35,7 +35,7 @@ def load(code, attributes):
     try:
         exec(code, {}, loc)
         if "Filters" in loc:
-            f = loc["Filters"](logger)                  # let it use our logger
+            f = loc["Filters"](logging.getLogger("filters.loaded_filter"))     # let it use a special logger
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:

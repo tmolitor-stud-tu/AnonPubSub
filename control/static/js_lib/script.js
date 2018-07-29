@@ -1061,7 +1061,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 		update_led(node, data.led_id, data.color);
 	});
 	$(document).on("aps.backend.data", function(event, node, data) {
-		var html = $("<span>"+data.received+" ("+data.expected+") <span>");
+		var html = $("<span>"+data.received+" <small>("+data.expected+")</small> <span>");
 		if(data.received != data.expected)
 			html.append("<span style=\"color: red; font-weight: bold;\">!!</span>");
 		node.data.settings.find(".info .data .value").html(html)

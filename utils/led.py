@@ -27,7 +27,7 @@ class LED(object):
 
     
 def init(node_id, event_queue):
-    logger.info("Initializing LED module...")
+    logger.info("Initializing LEDs...")
     leds = []
     for led_id in range(0, 10):
         leds.append(LED(led_id, node_id, event_queue))

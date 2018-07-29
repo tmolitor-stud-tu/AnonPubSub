@@ -594,6 +594,12 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                 del self.subscriber_ids[command["channel"]]
     
     def _dump_command(self, command):
+        # pretty printing for subscription_timers
+        subscription_timers = {}
+        for channel in self.subscription_timers:
+            subscription_timers[channel] = {}
+            for chain, timer_id in self.subscription_timers[channel].values():
+                subscription_timers[channel][str(base64.b64encode(chain), "ascii")] = timer_id
         # pretty printing for advertisement_routing_table
         advertisement_routing_table = {}
         for channel in self.advertisement_routing_table:
@@ -609,7 +615,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             "publishing": self.publishing,
             "master": self.master,
             "subscriber_ids": self.subscriber_ids,
-            "subscription_timers": self.subscription_timers,
+            "subscription_timers": subscription_timers,
             "advertisement_routing_table": advertisement_routing_table,
             "ActivePathsMixin": self._ActivePathsMixin__dump_state(),
         }

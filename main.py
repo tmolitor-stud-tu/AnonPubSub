@@ -13,7 +13,7 @@ import time
 import control
 import networking
 import routing
-import leds
+import utils
 import filters
 
 
@@ -65,7 +65,7 @@ signal.signal(signal.SIGINT, sigint_handler)
 # our mainloop and some aux functions it uses
 node_id = str(uuid.uuid4())
 logger.info("My node id is now '%s'..." % node_id)
-all_leds = leds.init(node_id, event_queue)
+all_leds = utils.init_leds(node_id, event_queue)
 to_publish = {}
 received = {}
 def apply_settings(data, path, apply_to):

@@ -47,9 +47,9 @@ class Filters(Base):
     def msg_outgoing(self, msg, con):
         self.logger.info("*********** OUTGOING ***********")
         self.leds[3].on(self.colors["blue"], 0.5)
-        if self.router.__class__.__name__ == "Flooding" and self.router.master[msg["channel"]]:
-            return False
-        drop = self.random.choice([True, False])
-        if drop:
-            self.leds[1].on(self.colors["white"], 0.5)
-        return drop     # this will drop the message in 50% of the cases
+        #if self.router.__class__.__name__ == "Flooding" and self.router.master[msg["channel"]]:
+            #return False
+        #drop = self.random.choice([True, False])
+        #if drop:
+            #self.leds[1].on(self.colors["white"], 0.5)
+        #return drop     # this will drop the message in 50% of the cases

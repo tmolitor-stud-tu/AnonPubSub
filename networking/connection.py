@@ -2,6 +2,7 @@ import os
 import base64
 import binascii
 import struct
+import numpy
 from collections import deque
 from threading import Thread, Event, RLock, current_thread
 
@@ -36,9 +37,10 @@ class Connection(object):
     settings = {
         "MAX_COVERT_PAYLOAD": 1200,         # always +94 bytes overhead for ping added to final encrypted packet (+58 bytes for unencrypted packets)
         "PING_INTERVAL": 0.25,
-        "MAX_MISSING_PINGS": 16,           # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
-        "MAX_RECONNECTS": 3,               # maximum consecutive reconnects after a connection failed
-        "ENCRYPT_PACKETS": True
+        "MAX_MISSING_PINGS": 16,            # consecutive missing pings, connection timeout will be MAX_MISSING_PINGS * PING_INTERVAL
+        "MAX_RECONNECTS": 3,                # maximum consecutive reconnects after a connection failed
+        "ENCRYPT_PACKETS": True,
+        "PACKET_LOSS": 0,                   # fraction of packet loss to apply to outgoing packets (covert channel AND data channel)
     }
     
     # public static method to initialize networking
@@ -156,7 +158,7 @@ class Connection(object):
             #raise BrokenPipeError("Connection already closed!")
             return      # ignore send on dead connection (will be "garbage collected" by router command "remove_connection" soon)
         data = self._encrypt(self._pack(msg))
-        Connection.listener.get_socket().sendto(data, self.addr)
+        self._raw_send(data)
     
     def send_covert_msg(self, msg):
         if self.is_dead.is_set():
@@ -164,7 +166,7 @@ class Connection(object):
             return      # ignore send on dead connection (will be "garbage collected" by router command "remove_connection" soon)
         with self.covert_msg_queue_lock:
             self.covert_messages_sent += 1      # increment sent counter
-            msg = Message(msg)      # copy original message before adding message counter
+            msg = Message(msg)                  # copy original message before adding message counter
             msg["_covert_messages_counter"] = self.covert_messages_sent
             # encode serialized message as base64 because this doesn't need additional escaping when it is json encoded later on
             self.covert_msg_queue.append(str(base64.b64encode(bytes(self._pack(msg))), 'ascii'))
@@ -185,7 +187,7 @@ class Connection(object):
             data += self.X25519_key.public_key().public_bytes()
         self.connection_state = flag
         self.logger.debug("outgoing packet(%s): %s" % (str(len(data)), str(data)))
-        Connection.listener.get_socket().sendto(data, self.addr)
+        self._raw_send(data)
     
     def _derive_key(self, data):
         try:
@@ -264,7 +266,7 @@ class Connection(object):
                     })
                     data = self._encrypt(self._pack(ack_msg))
                     if not self.is_dead.is_set():
-                        Connection.listener.get_socket().sendto(data, self.addr)
+                        self._raw_send(data)
                 elif msg.get_type() == "_ack":
                     # decode counter
                     (msg["covert_messages_counter"],) = struct.unpack("!Q", binascii.unhexlify(msg["covert_messages_counter"]))
@@ -325,9 +327,14 @@ class Connection(object):
             msg = Message("_ping", {"covert_messages": "".join(to_send), "padding": str().ljust(bytes_left, " ")})
             data = self._encrypt(self._pack(msg))
             if not self.is_dead.is_set():
-                Connection.listener.get_socket().sendto(data, self.addr)
+                self._raw_send(data)
     
     # *** low level stuff (handling raw bytes data) ***
+    def _raw_send(self, data):
+        drop_packet = numpy.random.choice([True, False], p=[Connection.settings["PACKET_LOSS"], 1-Connection.settings["PACKET_LOSS"]], size=1)[0]
+        if not drop_packet:
+            Connection.listener.get_socket().sendto(data, self.addr)
+        
     def _encrypt(self, packet):
         if not Connection.settings["ENCRYPT_PACKETS"]:
             return packet

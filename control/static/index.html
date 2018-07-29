@@ -110,7 +110,11 @@
 			</tr>
 			<tr title="Try to reconnect at most this often before giving up">
 				<td>Max reconnects:</td>
-				<td><input type="number" value="3" min="1" max="5" step="1" class="setting" data-setting="networking.Connection.MAX_RECONNECTS"></td>
+				<td><input type="number" value="3" min="1" max="10" step="1" class="setting" data-setting="networking.Connection.MAX_RECONNECTS"></td>
+			</tr>
+			<tr title="Fraction of packet loss to apply to outgoing packets (covert channel AND data channel)">
+				<td>Packet loss:</td>
+				<td><input type="number" value="0" min="0" max="1" step="0.01" class="setting" data-setting="networking.Connection.PACKET_LOSS"></td>
 			</tr>
 			<tr title="Encrypt packets on the wire (using ChaCha20-Poly1305 and X25519 for ephemeral key exchange)">
 				<td>Encrypt packets:</td>
