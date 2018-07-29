@@ -3,8 +3,6 @@
 import uuid
 from queue import Queue, Empty
 import argparse
-import urllib.request as urllib2
-from urllib.parse import quote_plus
 import sys
 import signal
 import time
@@ -144,7 +142,7 @@ while True:
         logger.debug("GUI command completed: %s" % str(command["_id"]))
         event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
         command_queue.task_done()
-        time.sleep(1);          # wait some time to deliver pending events via SSE
+        time.sleep(1);          # wait some time to give other threads a chance to deliver pending events via SSE
         cleanup_and_exit(0)     # the startup script will restart this node after a few seconds
     elif command["_command"] == "connect":
         if router:  # router and network are initialized at once, if we have no router our network is down, too
