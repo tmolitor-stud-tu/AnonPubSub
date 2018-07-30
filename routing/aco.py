@@ -89,6 +89,18 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         
         return numpy.random.choice(list(population.values()), p=weights, size=1)[0]
     
+    def __dump_state(self):
+        return {
+            "connections": list(self.connections.values()),
+            "subscriptions": list(self.subscriptions.keys()),
+            "subscriber_ids": self.subscriber_ids,
+            "publisher_ids": self.publisher_ids,
+            "pheromones": self.pheromones,
+            "publishing": self.publishing,
+            "ant_versions": self.ant_versions,
+            "publishers_seen": self.publishers_seen,
+        }
+    
     def _route_covert_data(self, msg, incoming_connection=None):
         if msg.get_type().endswith("_publish"):
             return self._route_publish(msg, incoming_connection)
@@ -345,23 +357,6 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             del self.publisher_ids[command["channel"]]
             self.publishing.discard(command["channel"])
         
-    
-    def _dump_command(self, command):
-        state = {
-            "connections": list(self.connections.values()),
-            "subscriptions": list(self.subscriptions.keys()),
-            "subscriber_ids": self.subscriber_ids,
-            "publisher_ids": self.publisher_ids,
-            "pheromones": self.pheromones,
-            "publishing": self.publishing,
-            "ant_versions": self.ant_versions,
-            "publishers_seen": self.publishers_seen,
-            "ActivePathsMixin": self._ActivePathsMixin__dump_state(),
-        }
-        logger.info("INTERNAL STATE:\n%s" % str(state))
-        if command and "callback" in command and command["callback"]:
-            command["callback"](state)
-    
     # *** the following commands are internal to ACO ***
     def __update_pheromones_command(self, command):
         if command["channel"] not in self.pheromones:

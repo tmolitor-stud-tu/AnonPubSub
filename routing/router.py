@@ -132,14 +132,6 @@ class Router(object):
         if peer in self.last_outgoing_time:
             del self.last_outgoing_time[peer]
     
-    def _covert_message_received_command(self, command):
-        # covert messages and uncovert messages are handled the same (only one part of the called method name differs)
-        return self.__route("covert_data", command["message"], command["connection"])
-    
-    def _message_received_command(self, command):
-        # covert messages and uncovert messages are handled the same (only one part of the called method name differs)
-        return self.__route("data", command["message"], command["connection"])
-    
     def _subscribe_command(self, command):
         self.subscriptions[command["channel"]] = command["callback"]
     
@@ -153,9 +145,29 @@ class Router(object):
     def _unpublish_command(self, command):
         pass    # this command has no common implementation that could be used by child classes
     
+    # *** special command methods that should NOT be overwritten by child classes ***
+    def _covert_message_received_command(self, command):
+        # covert messages and uncovert messages are handled the same (only one part of the called method name differs)
+        return self.__route("covert_data", command["message"], command["connection"])
+    
+    def _message_received_command(self, command):
+        # covert messages and uncovert messages are handled the same (only one part of the called method name differs)
+        return self.__route("data", command["message"], command["connection"])
+    
     def _dump_command(self, command):
-        # this command has no common implementation that could be used by child classes but is not mandatory to implement
-        logger.error("This router does not support dumping of its internal state!")
+        state = {}
+        # collect router and mixin states
+        childs = set(base.__name__ for base in self.__class__.__bases__ if base.__name__.endswith("Mixin"))
+        childs.add(self.__class__.__name__)
+        for child in childs:
+            func = "_%s__dump_state" % child    # child namespace
+            if hasattr(self, func):
+                state[child] = getattr(self, func)()
+        
+        # output and return collected states
+        logger.info("INTERNAL STATE:\n%s" % str(state))
+        if command and "callback" in command and command["callback"]:
+            command["callback"](state)
     
     # *** internal methods, DON'T touch from child classes ***
     def __route(self, message_category, message, connection):

@@ -17,6 +17,7 @@ from utils import init_mixins, final
 from .router import Router
 from .active_paths_mixin import ActivePathsMixin
 from .probabilistic_forwarding_mixin import ProbabilisticForwardingMixin
+from .cover_traffic_mixin import CoverTrafficMixin
 
 
 # this is used to pretty print sortedDict contents
@@ -28,7 +29,7 @@ class StrToClass(object):
 
 @final
 @init_mixins
-class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
+class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTrafficMixin):
     settings = {
         "ANONYMOUS_IDS": True,
         "MAX_HASHES": 1000,         # this limits the maximum diameter of the underlay to this value
@@ -133,6 +134,32 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         if not retval:
             retval = identifier
         return str(base64.b64encode(retval), "ascii")
+    
+    def __dump_state(self):
+        # pretty printing for subscription_timers
+        subscription_timers = {}
+        for channel in self.subscription_timers:
+            subscription_timers[channel] = {}
+            for chain, timer_id in self.subscription_timers[channel].items():
+                subscription_timers[channel][str(base64.b64encode(chain), "ascii")] = timer_id
+        # pretty printing for advertisement_routing_table
+        advertisement_routing_table = {}
+        for channel in self.advertisement_routing_table:
+            advertisement_routing_table[channel] = {}
+            for chain in self.advertisement_routing_table[channel]:
+                dict_contents = ["'%s': %s" % (str(base64.b64encode(nonce), "ascii"), str(self.advertisement_routing_table[channel][chain][nonce]))
+                                 for nonce, peer_set in self.advertisement_routing_table[channel][chain].items()]
+                advertisement_routing_table[channel][str(base64.b64encode(chain), "ascii")] = StrToClass("SortedDict(%s)" % ", ".join(dict_contents))
+        
+        return {
+            "connections": list(self.connections.values()),
+            "subscriptions": list(self.subscriptions.keys()),
+            "publishing": self.publishing,
+            "master": self.master,
+            "subscriber_ids": self.subscriber_ids,
+            "subscription_timers": subscription_timers,
+            "advertisement_routing_table": advertisement_routing_table,
+        }
     
     def _route_covert_data(self, msg, incoming_connection=None):
         # manage hashchain routing tables
@@ -592,36 +619,6 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             # remove old subscriber id if not needed anymore
             if command["channel"] in self.subscriber_ids:
                 del self.subscriber_ids[command["channel"]]
-    
-    def _dump_command(self, command):
-        # pretty printing for subscription_timers
-        subscription_timers = {}
-        for channel in self.subscription_timers:
-            subscription_timers[channel] = {}
-            for chain, timer_id in self.subscription_timers[channel].values():
-                subscription_timers[channel][str(base64.b64encode(chain), "ascii")] = timer_id
-        # pretty printing for advertisement_routing_table
-        advertisement_routing_table = {}
-        for channel in self.advertisement_routing_table:
-            advertisement_routing_table[channel] = {}
-            for chain in self.advertisement_routing_table[channel]:
-                dict_contents = ["'%s': %s" % (str(base64.b64encode(nonce), "ascii"), str(self.advertisement_routing_table[channel][chain][nonce]))
-                                 for nonce, peer_set in self.advertisement_routing_table[channel][chain].items()]
-                advertisement_routing_table[channel][str(base64.b64encode(chain), "ascii")] = StrToClass("SortedDict(%s)" % ", ".join(dict_contents))
-        
-        state = {
-            "connections": list(self.connections.values()),
-            "subscriptions": list(self.subscriptions.keys()),
-            "publishing": self.publishing,
-            "master": self.master,
-            "subscriber_ids": self.subscriber_ids,
-            "subscription_timers": subscription_timers,
-            "advertisement_routing_table": advertisement_routing_table,
-            "ActivePathsMixin": self._ActivePathsMixin__dump_state(),
-        }
-        logger.info("INTERNAL STATE:\n%s" % str(state))
-        if command and "callback" in command and command["callback"]:
-            command["callback"](state)
     
     # *** the following commands are internal to Flooding ***
     def __reflood_command(self, command):
