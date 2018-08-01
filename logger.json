@@ -35,6 +35,9 @@
 		"networking": {
 			"level": "INFO"
 		},
+		"routing.router_base": {
+			"level": "INFO"
+		},
 		"routing.router": {
 			"level": "INFO"
 		},

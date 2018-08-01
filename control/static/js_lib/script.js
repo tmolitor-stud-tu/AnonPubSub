@@ -88,8 +88,10 @@ var parse_settings = function() {
 };
 
 //connection coloring and connection management
-var update_connection_state = function(state1, ip1, ip2, active_init) {
+var update_connection_state = function(state1, ip1, ip2, active_init, port) {
 	if(!canvas)		//sanity check
+		return;
+	if(port==9998)		//TODO: add new dashed connectors for group connections
 		return;
 	var connection;
 	var connections=canvas.getConnections();
@@ -930,6 +932,17 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 		var node = $(this).closest(".node-settings").data("node");
 		send_command(node.data.ip, "dump");
 	});
+	$(document).on("click", ".node-settings .actions .create-group", function() {
+		var node = $(this).closest(".node-settings").data("node");
+		var channel = window.prompt("What channel to create covergroup for?","test");
+		var ips = window.prompt("List of IPs to connect to (comma separated):","127.0.0.22,127.0.0.30,127.0.0.20");
+		var interval = window.prompt("Message interval (should be the smallest publish interval of all publishers in group:","0.5");
+		send_command(node.data.ip, "create_group", {
+			channel: channel,
+			ips: ips.split(','),
+			interval: parseFloat(interval),
+		});
+	});
 	
 	
 	//log window
@@ -1071,7 +1084,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 		node.data.settings.find(".state .state").text(JSON.stringify(data, null, 2));
 	});
 	$(document).on("aps.backend.connecting aps.backend.connected aps.backend.disconnected", function(event, node, data) {
-		update_connection_state(event.namespace.split(".").pop(), node.data.ip, data.addr, data.active_init);
+		update_connection_state(event.namespace.split(".").pop(), node.data.ip, data.addr, data.active_init, data.port);
 	});
 })});		//end of loaded wrapper
 })();		//end of namespace wrapper

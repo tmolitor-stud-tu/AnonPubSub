@@ -42,7 +42,6 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         self.subscriber_ids = {}
         self.publisher_ids = {}
         self.pheromones = {}
-        self.publishing = set()
         self.ant_versions = 0
         self.publishers_seen = {}
         self.overlay_creation_timers = {}
@@ -91,12 +90,9 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
     
     def __dump_state(self):
         return {
-            "connections": list(self.connections.values()),
-            "subscriptions": list(self.subscriptions.keys()),
             "subscriber_ids": self.subscriber_ids,
             "publisher_ids": self.publisher_ids,
             "pheromones": self.pheromones,
-            "publishing": self.publishing,
             "ant_versions": self.ant_versions,
             "publishers_seen": self.publishers_seen,
         }
@@ -257,8 +253,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         self._init_channel(msg["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
         
-        if msg["channel"] in self.subscriptions:
-            self.subscriptions[msg["channel"]](msg["data"])        # inform own subscriber of new data
+        self._forward_data(msg)     # inform own subscribers of new data
         
         # calculate list of next nodes to route a (data) messages to according to the active edges (and don't add our incoming peer here)
         connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
@@ -343,7 +338,8 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         
         msg = Message("%s_data" % self.__class__.__name__, {
             "channel": command["channel"],
-            "data": command["data"]
+            "data": command["data"],
+            "id": str(uuid.uuid4()),
         })
         self._route_data(msg)
     

@@ -11,6 +11,7 @@ import time
 import control
 import networking
 import routing
+import cover_groups
 import utils
 import filters
 
@@ -41,6 +42,8 @@ server = control.Server(args.listen, event_queue, command_queue)
 # initialize global vars
 queue = None
 router = None
+group_router = None
+group_queue = None
 
 # use this to cleanup the system and exit
 def cleanup_and_exit(code=0):
@@ -95,7 +98,9 @@ while True:
     # periodically publish a simple counter on all configured channels (about every second or every incoming command (whichever comes first))
     for channel in to_publish:
         if router:  # only publish if we have a router
-            router.publish(channel, to_publish[channel]);
+            # try to publish via cover group and publish directly if we are in no cover group for this channel
+            if not group_router.publish(channel, to_publish[channel]):
+                router.publish(channel, to_publish[channel]);
             to_publish[channel] += 1
         else:
             logger.error("Cannot publish on channel '%s': no router initialized!" % str(channel))
@@ -121,21 +126,27 @@ while True:
             # apply settings if present
             apply_settings(command["settings"], ["networking", "Connection"], networking.Connection)
             apply_settings(command["settings"], ["routing", "Router"], routing.Router)
+            apply_settings(command["settings"], ["cover_groups", "GroupRouter"], cover_groups.GroupRouter)
             apply_settings(command["settings"], ["routing", command["router"]], router_class)
             
             # initialize networking and router
             queue = Queue()
-            networking.Connection.init(node_id, queue, args.listen, event_queue)
+            group_queue = Queue()
+            networking.Connection.init(node_id, queue, args.listen, 9999, event_queue)
+            networking.GroupConnection.init(node_id, group_queue, args.listen, 9998, event_queue)
             router = router_class(node_id, queue)
-            filters.update_attributes({"router": router})
+            group_router = cover_groups.GroupRouter(node_id, group_queue, router)
+            filters.update_attributes({"router": router, "group_router": group_router})
         else:
             fail_command(command, "Cannot start new router '%s': old router still initialized" % str(command["router"]))
     elif command["_command"] == "stop":
         if router:
             router.stop()
             router = None
+            group_router = None
         networking.Connection.shutdown()
         queue = None
+        group_queue = None
         to_publish = {}
         received = {}
     elif command["_command"] == "reset":
@@ -186,6 +197,11 @@ while True:
         retval = filters.load(command["code"], {"leds": all_leds, "router": router})
         if retval:
             fail_command(command, retval)
+    elif command["_command"] == "create_group":
+        if group_router:
+            group_router.create_group(command["channel"], command["ips"], command["interval"])
+        else:
+            fail_command(command, "Cannot create covergroup for channel '%s': no group_router initialized!" % str(command["channel"]))
     elif command["_command"] == "_new_http_client":
         event_queue.put({"type": "node_id", "data": {"node_id": node_id}})
     else:

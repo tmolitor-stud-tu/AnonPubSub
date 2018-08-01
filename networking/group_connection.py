@@ -26,7 +26,7 @@ from .message import Message
 import filters
 
 
-class Connection(object):
+class GroupConnection(object):
     reconnections_stopped = Event()
     node_id = None
     router_queue = None
@@ -47,40 +47,40 @@ class Connection(object):
     # public static method to initialize networking
     @staticmethod
     def init(node_id, queue, host, port, event_queue=None):
-        Connection.reconnections_stopped.clear()    # clear shutdown flag
-        Connection.node_id = node_id
-        Connection.port = port
-        Connection.router_queue = queue
-        Connection.listener = Listener(Connection.node_id, Connection._incoming_data, host, Connection.port)
-        Connection.event_queue = event_queue
+        GroupConnection.reconnections_stopped.clear()    # clear shutdown flag
+        GroupConnection.node_id = node_id
+        GroupConnection.port = port
+        GroupConnection.router_queue = queue
+        GroupConnection.listener = Listener(GroupConnection.node_id, GroupConnection._incoming_data, host, GroupConnection.port)
+        GroupConnection.event_queue = event_queue
     
     # public static factory method for new outgoing instances
     @staticmethod
     def connect_to(host, reconnect_try=0):
-        return Connection._new((host, Connection.port), True, reconnect_try)
+        return GroupConnection._new((host, GroupConnection.port), True, reconnect_try)
     
     @staticmethod
     def disconnect_from(host):
-        addr = (host, Connection.port)
-        with Connection.instances_lock:
-            if str(addr) in Connection.instances:
-                Connection.instances[str(addr)].terminate()
+        addr = (host, GroupConnection.port)
+        with GroupConnection.instances_lock:
+            if str(addr) in GroupConnection.instances:
+                GroupConnection.instances[str(addr)].terminate()
     
     # internal static factory method for incoming packets used by listener class
     @staticmethod
     def _incoming_data(addr, data):
-        con = Connection._new(addr, False, 0)
+        con = GroupConnection._new(addr, False, 0)
         con._incoming(data)
     
     # internal static factory method doing the actual work
     @staticmethod
     def _new(addr, active_init, reconnect_try):
-        if not Connection.listener:
-            raise ValueError("Network not initialized, call Connection.init() first!")
-        with Connection.instances_lock:
-            if str(addr) not in Connection.instances or Connection.instances[str(addr)].is_dead.is_set():
-                Connection.instances[str(addr)] = Connection(addr, active_init, reconnect_try)
-            con = Connection.instances[str(addr)]
+        if not GroupConnection.listener:
+            raise ValueError("Network not initialized, call GroupConnection.init() first!")
+        with GroupConnection.instances_lock:
+            if str(addr) not in GroupConnection.instances or GroupConnection.instances[str(addr)].is_dead.is_set():
+                GroupConnection.instances[str(addr)] = GroupConnection(addr, active_init, reconnect_try)
+            con = GroupConnection.instances[str(addr)]
         if active_init:
             con.active_init = active_init   # force right value (used on reconnect)
         return con
@@ -89,18 +89,18 @@ class Connection(object):
     @staticmethod
     def shutdown():
         # stop listener
-        if Connection.listener:
-            Connection.listener.stop()
+        if GroupConnection.listener:
+            GroupConnection.listener.stop()
         # stop reconnections from happening
-        Connection.reconnections_stopped.set()
+        GroupConnection.reconnections_stopped.set()
         # terminate all connections (has to be done AFTER stopping the listener so to not create new connections by incoming packets)
-        with Connection.instances_lock:
-            for con in list(Connection.instances.values()):
+        with GroupConnection.instances_lock:
+            for con in list(GroupConnection.instances.values()):
                 con.terminate()
         # cleanup static class attributes
-        Connection.node_id = None
-        Connection.router_queue = None
-        Connection.listener = None
+        GroupConnection.node_id = None
+        GroupConnection.router_queue = None
+        GroupConnection.listener = None
         
     # class constructor
     def __init__(self, addr, active_init, reconnect_try):
@@ -113,7 +113,7 @@ class Connection(object):
         self.peer_id = None
         self.pinger_thread = None
         self.watchdog_lock = RLock()
-        self.watchdog_counter = Connection.settings["MAX_MISSING_PINGS"]    # connection timeout = MAX_MISSING_PINGS * PING_INTERVAL
+        self.watchdog_counter = GroupConnection.settings["MAX_MISSING_PINGS"]    # connection timeout = MAX_MISSING_PINGS * PING_INTERVAL
         self.watchdog_thread = None
         self.connection_state = 'IDLE'
         self.active_init = active_init
@@ -126,11 +126,11 @@ class Connection(object):
         
         self.logger.info("Initializing new connection with %s (connect #%s)" % (str(self.addr), str(self.reconnect_try)))
         if self.active_init:
-            Connection.event_queue.put({"type": "connecting", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+            GroupConnection.event_queue.put({"type": "connecting", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
             self._send_init_msg("SYN")
         
         # init watchdog thread to terminate connection after MAX_MISSING_PINGS consecutive failures to receive a ping
-        self.watchdog_thread = Thread(name="local::"+Connection.node_id+"::_watchdog", target=self._watchdog)
+        self.watchdog_thread = Thread(name="local::"+GroupConnection.node_id+"::_watchdog", target=self._watchdog)
         self.watchdog_thread.start()
     
     def terminate(self):
@@ -138,11 +138,11 @@ class Connection(object):
         if not self.is_dead.is_set():
             self.logger.debug("closing connection...")
             self.is_dead.set()
-            with Connection.instances_lock:
-                if str(self.addr) in Connection.instances:
-                    del Connection.instances[str(self.addr)]
+            with GroupConnection.instances_lock:
+                if str(self.addr) in GroupConnection.instances:
+                    del GroupConnection.instances[str(self.addr)]
             if self.connection_state == "ESTABLISHED":
-                Connection.router_queue.put({
+                GroupConnection.router_queue.put({
                     "_command": "remove_connection",
                     "connection": self
                 })
@@ -153,7 +153,7 @@ class Connection(object):
         if self.reconnect_thread and self.reconnect_thread != current_thread():
             self.reconnect_thread.join()
         self.logger.info("Connection terminated successfully...")
-        Connection.event_queue.put({"type": "disconnected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+        GroupConnection.event_queue.put({"type": "disconnected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
     
     def send_msg(self, msg, call_filters = True):
         if self.connection_state != "ESTABLISHED":                      # not connected
@@ -165,10 +165,9 @@ class Connection(object):
             return      # ignore send on dead connection (will be "garbage collected" by router command "remove_connection" soon)
         data = self._encrypt(self._pack(msg))
         self._raw_send(data)
-
     
     def send_covert_msg(self, msg, call_filters = True):
-        if call_filters and filters.covert_msg_outgoing(msg, self):         # call filters framework
+        if call_filters and filters.covert_msg_outgoing(msg, self):     # call filters framework
             return
         if self.is_dead.is_set():
             #raise BrokenPipeError("Connection already closed!")
@@ -188,14 +187,14 @@ class Connection(object):
         return self.addr[0]
     
     def __repr__(self):
-        return "Connection<%s[%s]%s>" % (str(self.peer_id), str(self.instance_id), str(self.addr))
+        return "GroupConnection<%s[%s]%s>" % (str(self.peer_id), str(self.instance_id), str(self.addr))
     
     # *** internal methods for connection initialisation ***
     def _send_init_msg(self, flag):
         self.logger.debug("sending init message '%s' from state '%s'..." % (str(flag), str(self.connection_state)))
         data = bytearray(flag, 'ascii')
         if flag == "SYN" or flag == "SYN-ACK":      # add key exchange data to SYN and SYN-ACK messages
-            data += bytes(Connection.node_id, 'ascii')
+            data += bytes(GroupConnection.node_id, 'ascii')
             data += self.X25519_key.public_key().public_bytes()
         self.connection_state = flag
         self.logger.debug("outgoing packet(%s): %s" % (str(len(data)), str(data)))
@@ -221,11 +220,11 @@ class Connection(object):
         # our connection is now established, inform router of the new connection and activate pinger thread
         self.connection_state = "ESTABLISHED"
         self.reconnect_try = 0  # connection successful, reset reconnection counter
-        self.pinger_thread = Thread(name="local::"+Connection.node_id+"::_pinger", target=self._pinger)
+        self.pinger_thread = Thread(name="local::"+GroupConnection.node_id+"::_pinger", target=self._pinger)
         self.pinger_thread.start()
         self.logger.info("Connection with %s initialized" % str(self.addr))
-        Connection.event_queue.put({"type": "connected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
-        Connection.router_queue.put({
+        GroupConnection.event_queue.put({"type": "connected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+        GroupConnection.router_queue.put({
             "_command": "add_connection",
             "connection": self
         })
@@ -236,7 +235,7 @@ class Connection(object):
         self.logger.debug("incoming packet(%s): %s" % (str(len(packet)), str(packet)))
         if not self.connection_state == "ESTABLISHED":  # init phase (unencrypted)
             if self.connection_state == "IDLE" and packet[:3] == b"SYN":
-                Connection.event_queue.put({"type": "connecting", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+                GroupConnection.event_queue.put({"type": "connecting", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
                 self.peer_id = packet[3:39].decode("ascii")
                 self._derive_key(packet[39:])
                 self._send_init_msg("SYN-ACK")
@@ -261,7 +260,7 @@ class Connection(object):
                 if msg.get_type() == "_ping":
                     # update ping watchdog
                     with self.watchdog_lock:
-                        self.watchdog_counter = Connection.settings["MAX_MISSING_PINGS"]
+                        self.watchdog_counter = GroupConnection.settings["MAX_MISSING_PINGS"]
                     # process covert messages
                     for covert_msg in self._unpack(base64.b64decode(bytes(msg["covert_messages"], "ascii")), False):
                         # no lock for covert_messages_received needed here because _incoming() is only called by one receiving thread
@@ -270,7 +269,7 @@ class Connection(object):
                             self.covert_messages_received = covert_msg["_covert_messages_counter"]
                             del covert_msg["_covert_messages_counter"]      # this is only internal, do not expose it to routers or filters
                             if not filters.covert_msg_incoming(covert_msg, self):       # call filters framework
-                                Connection.router_queue.put({"_command": "covert_message_received", "connection": self, "message": covert_msg})
+                                GroupConnection.router_queue.put({"_command": "covert_message_received", "connection": self, "message": covert_msg})
                     # send out ack
                     ack_msg = Message("_ack", {
                         # covert_messages_counter in network byte order (big endian) coded to hex (this is a constant length string)
@@ -289,42 +288,42 @@ class Connection(object):
                             self.covert_msg_queue.popleft()
                 else:
                     if not filters.msg_incoming(msg, self):     # call filters framework
-                        Connection.router_queue.put({"_command": "message_received", "connection": self, "message": msg})
+                        GroupConnection.router_queue.put({"_command": "message_received", "connection": self, "message": msg})
     
     def _reconnect(self):
         # try to reconnect after (PING_INTERVAL * MAX_MISSING_PINGS) + random(0, 2) seconds
         reconnect = (
-            (Connection.settings["PING_INTERVAL"] * Connection.settings["MAX_MISSING_PINGS"]) +
+            (GroupConnection.settings["PING_INTERVAL"] * GroupConnection.settings["MAX_MISSING_PINGS"]) +
             (float(int.from_bytes(os.urandom(2), byteorder='big', signed=False))/32768.0)
         )
         self.logger.info("Reconnecting in %.3f seconds..." % reconnect)
-        if not Connection.reconnections_stopped.wait(reconnect):
-            Connection.connect_to(self.addr[0], self.reconnect_try+1)
+        if not GroupConnection.reconnections_stopped.wait(reconnect):
+            GroupConnection.connect_to(self.addr[0], self.reconnect_try+1)
         else:
             self.logger.info("Reconnection cancelled...")
     
     # *** internal threads ***
     def _watchdog(self):
-        while not self.is_dead.wait(Connection.settings["PING_INTERVAL"]):
+        while not self.is_dead.wait(GroupConnection.settings["PING_INTERVAL"]):
             with self.watchdog_lock:
                 self.watchdog_counter -= 1
                 copy = self.watchdog_counter
             if copy <= 0:
                 self.logger.warning("Ping watchdog triggered in connection state '%s'!" % self.connection_state)
                 self.terminate()
-                if self.active_init and self.reconnect_try < Connection.settings["MAX_RECONNECTS"]:
-                    if not Connection.reconnections_stopped.is_set():
-                        self.reconnect_thread = Thread(name="local::"+Connection.node_id+"::_reconnect", target=self._reconnect)
+                if self.active_init and self.reconnect_try < GroupConnection.settings["MAX_RECONNECTS"]:
+                    if not GroupConnection.reconnections_stopped.is_set():
+                        self.reconnect_thread = Thread(name="local::"+GroupConnection.node_id+"::_reconnect", target=self._reconnect)
                         self.reconnect_thread.start()
                     else:
                         self.logger.info("Reconnections disallowed by shutdown, not trying to reconnect...")
                 else:
-                    self.logger.info("Not active_init or maximum reconnects of %s reached, not trying to reconnect..." % str(Connection.settings["MAX_RECONNECTS"]))
+                    self.logger.info("Not active_init or maximum reconnects of %s reached, not trying to reconnect..." % str(GroupConnection.settings["MAX_RECONNECTS"]))
     
     # the pinger utilizes our covert channel filled with messages from covert_msg_queue
     def _pinger(self):
-        while not self.is_dead.wait(Connection.settings["PING_INTERVAL"]):
-            bytes_left = Connection.settings["MAX_COVERT_PAYLOAD"]
+        while not self.is_dead.wait(GroupConnection.settings["PING_INTERVAL"]):
+            bytes_left = GroupConnection.settings["MAX_COVERT_PAYLOAD"]
             to_send = []
             with self.covert_msg_queue_lock:
                 # add covert messages to ping message (unacked or new ones) until the size of MAX_COVERT_PAYLOAD would be exceeded
@@ -343,23 +342,23 @@ class Connection(object):
     
     # *** low level stuff (handling raw bytes data) ***
     def _raw_send(self, data):
-        drop_packet = numpy.random.choice([True, False], p=[Connection.settings["PACKET_LOSS"], 1-Connection.settings["PACKET_LOSS"]], size=1)[0]
+        drop_packet = numpy.random.choice([True, False], p=[GroupConnection.settings["PACKET_LOSS"], 1-GroupConnection.settings["PACKET_LOSS"]], size=1)[0]
         if not drop_packet:
             try:
-                Connection.listener.get_socket().sendto(data, self.addr)
+                GroupConnection.listener.get_socket().sendto(data, self.addr)
             except Exception as e:
                 self.logger.warning("Could not packet to '%s', terminating connection! Exception: %s" % (str(self.addr), str(e)))
                 self.terminate()
         
     def _encrypt(self, packet):
-        if not Connection.settings["ENCRYPT_PACKETS"]:
+        if not GroupConnection.settings["ENCRYPT_PACKETS"]:
             return packet
         chacha = ChaCha20Poly1305(self.peer_key)
         nonce = os.urandom(12)
         return nonce + chacha.encrypt(nonce, packet, None)
     
     def _decrypt(self, packet):
-        if not Connection.settings["ENCRYPT_PACKETS"]:
+        if not GroupConnection.settings["ENCRYPT_PACKETS"]:
             return packet
         chacha = ChaCha20Poly1305(self.peer_key)
         nonce = packet[:12]
@@ -383,8 +382,8 @@ class Connection(object):
                 return []   # packet cannot be decrypted, ignore it
         # unpack every message object in this packet
         messages = []
-        while len(packet) > Connection.len_size:  # fewer bytes than Connection.len_size can only be padding bytes
-            data, packet = self._extract(packet, Connection.len_size)
+        while len(packet) > GroupConnection.len_size:  # fewer bytes than GroupConnection.len_size can only be padding bytes
+            data, packet = self._extract(packet, GroupConnection.len_size)
             (json_len,) = struct.unpack("!Q", data)
             if not json_len:
                 break;      # only padding bytes coming now, skip them

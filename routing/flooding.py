@@ -17,7 +17,7 @@ from utils import init_mixins, final
 from .router import Router
 from .active_paths_mixin import ActivePathsMixin
 from .probabilistic_forwarding_mixin import ProbabilisticForwardingMixin
-from .cover_traffic_mixin import CoverTrafficMixin
+from cover_groups import CoverTrafficMixin
 
 
 # this is used to pretty print sortedDict contents
@@ -51,7 +51,6 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         
         # init own data structures
         self.edge_version = 0
-        self.publishing = set()
         self.master = {}
         self.become_master_timers = {}
         self.subscriber_ids = {}
@@ -152,9 +151,6 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
                 advertisement_routing_table[channel][str(base64.b64encode(chain), "ascii")] = StrToClass("SortedDict(%s)" % ", ".join(dict_contents))
         
         return {
-            "connections": list(self.connections.values()),
-            "subscriptions": list(self.subscriptions.keys()),
-            "publishing": self.publishing,
             "master": self.master,
             "subscriber_ids": self.subscriber_ids,
             "subscription_timers": subscription_timers,
@@ -442,9 +438,8 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
             return
         
         # route normal data messages along active paths to subscribers
-
-        if msg["channel"] in self.subscriptions:
-            self.subscriptions[msg["channel"]](msg["data"])        # inform own subscriber of new data
+        
+        self._forward_data(msg)     # inform own subscribers of new data
         
         # calculate list of next nodes to route a (data) messages to according to the active edges (and don't add our incoming peer here)
         connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
@@ -506,6 +501,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
             }), command["connection"])
     
     def _publish_command(self, command):
+        # no need to call parent class here, doing everything on our own
         self._init_channel(command["channel"])
         if command["channel"] not in self.publishing:
             self.publishing.add(command["channel"])
@@ -524,6 +520,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
             self._route_data(Message("%s_data" % self.__class__.__name__, {
                 "channel": command["channel"],
                 "data": command["data"],
+                "id": str(uuid.uuid4()),
             }))
         elif not len(self.advertisement_routing_table[command["channel"]]):
             if command["channel"] not in self.become_master_timers:     # only start timer once
@@ -541,10 +538,12 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
             self._route_data(Message("%s_publish" % self.__class__.__name__, {
                 "channel": command["channel"],
                 "data": command["data"],
+                "id": str(uuid.uuid4()),
                 "nonce": str(base64.b64encode(master), "ascii"),
             }))
     
     def _unpublish_command(self, command):
+        # no need to call parent class here, doing everything on our own
         self._init_channel(command["channel"])
         if command["channel"] not in self.publishing:
             return

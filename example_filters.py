@@ -15,7 +15,7 @@ class Filters(Base):
             "white": (255,255,255)
         }
         
-        # some imports needed
+        # some imports needed later
         self.random = __import__("random")
         
     def covert_msg_incoming(self, msg, con):
@@ -41,12 +41,22 @@ class Filters(Base):
             pass    #logger.error("sending returning and activating ant to peer %s" % con.get_peer_id())
 
     def msg_incoming(self, msg, con):
-        self.logger.info("*********** INCOMING(%s) channel %s connection %s ***********" % (msg.get_type(), msg["channel"], con))
-        self.leds[2].on(self.colors["red"], 0.5)
+        #self.logger.info("*********** INCOMING(%s) connection %s ***********" % (msg.get_type(), con))
+        if msg.get_type() == "GroupRouter_data":
+            self.leds[8].on(self.colors["green"], 0.25)
+        elif msg.get_type() == "Flooding_publish":
+            self.leds[0].on(self.colors["red"], 0.5)
+        else:
+            self.leds[4].on(self.colors["red"], 0.5)
 
     def msg_outgoing(self, msg, con):
-        self.logger.info("*********** OUTGOING ***********")
-        self.leds[3].on(self.colors["blue"], 0.5)
+        #self.logger.info("*********** OUTGOING(%s) connection %s ***********" % (msg.get_type(), con))
+        if msg.get_type() == "GroupRouter_data":
+            self.leds[9].on(self.colors["white"], 0.25)
+        elif msg.get_type() == "Flooding_publish":
+            self.leds[1].on(self.colors["blue"], 0.5)
+        else:
+            self.leds[5].on(self.colors["blue"], 0.5)
         #if self.router.__class__.__name__ == "Flooding" and self.router.master[msg["channel"]]:
             #return False
         #drop = self.random.choice([True, False])

@@ -1,3 +1,4 @@
+import uuid
 import numpy
 import logging
 logger = logging.getLogger(__name__)
@@ -22,8 +23,7 @@ class Gossiping(Router):
             logger.warning("Ignoring data because of expired ttl!")
             return
         
-        if msg["channel"] in self.subscriptions:
-            self.subscriptions[msg["channel"]](msg["data"])        # inform own subscriber of new data
+        self._forward_data(msg)     # inform own subscribers of new data
         
         msg["ttl"] -= 1
         msg["nodes"].append(self.node_id)
@@ -40,9 +40,12 @@ class Gossiping(Router):
             self._send_msg(msg, self.connections[node_id])
     
     def _publish_command(self, command):
+        # call parent class for common tasks (update self.publishing)
+        super(Gossiping, self)._publish_command(command)
         msg = Message("%s_data" % self.__class__.__name__, {
             "channel": command["channel"],
             "data": command["data"],
+            "id": str(uuid.uuid4()),
             "ttl": Gossiping.settings["INITIAL_TTL"],
             "nodes": []
         })
