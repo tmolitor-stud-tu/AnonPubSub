@@ -419,6 +419,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
                 self._route_data(Message("%s_data" % self.__class__.__name__, {
                     "channel": msg["channel"],
                     "data": msg["data"],
+                    "id": msg["id"],
                 }))
                 # the publish message ends here
                 return
