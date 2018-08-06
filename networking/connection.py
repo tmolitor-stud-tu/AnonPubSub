@@ -6,19 +6,22 @@ import numpy
 from collections import deque
 from threading import Thread, Event, RLock, current_thread
 
-#crypto imports
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-
 #logging
 import logging
 def configure_logger(addr=None, instance_id=None):
     logger = logging.getLogger("%s[%s]@%s:%s" % (__name__, str(instance_id), str(addr[0]), str(addr[1])))
     return logger
 logger = logging.getLogger(__name__)    #default logger
+
+#crypto imports
+try:
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+except Exception as e:
+    logger.warning("Crypto imports failed, ignoring this (make sure to disable crypto in settings!!)")
 
 # own classes
 from .listener import Listener
@@ -108,7 +111,8 @@ class Connection(object):
         self.instance_id = str(binascii.hexlify(os.urandom(2)), 'ascii')
         self.logger=configure_logger(self.addr, self.instance_id)
         self.is_dead = Event()
-        self.X25519_key = X25519PrivateKey.generate()
+        if Connection.settings["ENCRYPT_PACKETS"]:
+            self.X25519_key = X25519PrivateKey.generate()
         self.peer_key = None
         self.peer_id = None
         self.pinger_thread = None
@@ -196,7 +200,10 @@ class Connection(object):
         data = bytearray(flag, 'ascii')
         if flag == "SYN" or flag == "SYN-ACK":      # add key exchange data to SYN and SYN-ACK messages
             data += bytes(Connection.node_id, 'ascii')
-            data += self.X25519_key.public_key().public_bytes()
+            if Connection.settings["ENCRYPT_PACKETS"]:
+                data += self.X25519_key.public_key().public_bytes()
+            else:
+                data += os.urandom(32)      # dummy data
         self.connection_state = flag
         self.logger.debug("outgoing packet(%s): %s" % (str(len(data)), str(data)))
         self._raw_send(data)
@@ -205,14 +212,15 @@ class Connection(object):
         try:
             if len(data) != 32:
                 raise ValueError("Key material size is not 32 bytes")
-            # derive symmetric peer_key used to encrypt further communication
-            self.peer_key = HKDF(
-                algorithm=hashes.BLAKE2s(32),
-                length=32,
-                salt=None,
-                info=None,
-                backend=default_backend()
-            ).derive(self.X25519_key.exchange(X25519PublicKey.from_public_bytes(data)))
+            if Connection.settings["ENCRYPT_PACKETS"]:
+                # derive symmetric peer_key used to encrypt further communication
+                self.peer_key = HKDF(
+                    algorithm=hashes.BLAKE2s(32),
+                    length=32,
+                    salt=None,
+                    info=None,
+                    backend=default_backend()
+                ).derive(self.X25519_key.exchange(X25519PublicKey.from_public_bytes(data)))
         except Exception as e:
             self.logger.warning("Could not derive key on connection init, terminating connection! Exception: %s" % str(e))
             self.terminate()
