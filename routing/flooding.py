@@ -57,6 +57,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         self.subscription_timers = {}
         self.reflood_timers = {}
         self.advertisement_routing_table = {}
+        self.subscriptions_seen = {}
         
         logger.info("%s router initialized..." % self.__class__.__name__)
     
@@ -70,6 +71,8 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
             self.reflood_timers[channel] = {}
         if not channel in self.subscription_timers:
             self.subscription_timers[channel] = {}
+        if not channel in self.subscriptions_seen:
+            self.subscriptions_seen[channel] = {}
     
     def stop(self):
         logger.warning("Stopping router!")
@@ -189,7 +192,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         chain = base64.b64decode(bytes(subscription["chain"], "ascii"))    # decode nonce
         
         # avoid loops
-        if incoming_connection and subscription["channel"] in self.subscriber_ids and subscription["subscriber"] == self.subscriber_ids[subscription["channel"]]:
+        if incoming_connection and subscription["id"] in subscriptions_seen[subscription["channel"]]:
             logger.error("Received own subscription, dropping it to prevent loop!")
             return
         
@@ -685,7 +688,8 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
             "channel": command["channel"],  # this would be the encrypted topic if a TTP was used
             "subscriber": self.subscriber_ids[command["channel"]],
             "chain": str(base64.b64encode(chain), "ascii"),
-            "version": self.edge_version
+            "version": self.edge_version,
+            "id": str(uuid.uuid4()),
         }))
     
     def __become_master_command(self, command):
