@@ -24,6 +24,7 @@ except Exception as e:
     logger.warning("Crypto imports failed, ignoring this (make sure to disable crypto in settings!!)")
 
 # own classes
+from utils import catch_exceptions
 from .listener import Listener
 from .message import Message
 import filters
@@ -91,6 +92,7 @@ class GroupConnection(object):
     # public static method to terminate all connections
     @staticmethod
     def shutdown():
+        logger.warning("Shutting down group networking...")
         # stop listener
         if GroupConnection.listener:
             GroupConnection.listener.stop()
@@ -100,6 +102,7 @@ class GroupConnection(object):
         with GroupConnection.instances_lock:
             for con in list(GroupConnection.instances.values()):
                 con.terminate()
+        logger.warning("Group network shutdown complete...")
         # cleanup static class attributes
         GroupConnection.node_id = None
         GroupConnection.router_queue = None
@@ -134,7 +137,7 @@ class GroupConnection(object):
             self._send_init_msg("SYN")
         
         # init watchdog thread to terminate connection after MAX_MISSING_PINGS consecutive failures to receive a ping
-        self.watchdog_thread = Thread(name="local::"+GroupConnection.node_id+"::_watchdog", target=self._watchdog)
+        self.watchdog_thread = Thread(name="local::"+GroupConnection.node_id+"::_watchdog", target=self._watchdog, daemon=True)
         self.watchdog_thread.start()
     
     def terminate(self):
@@ -146,18 +149,20 @@ class GroupConnection(object):
                 if str(self.addr) in GroupConnection.instances:
                     del GroupConnection.instances[str(self.addr)]
             if self.connection_state == "ESTABLISHED":
-                GroupConnection.router_queue.put({
-                    "_command": "remove_connection",
-                    "connection": self
-                })
+                if GroupConnection.router_queue:
+                    GroupConnection.router_queue.put({
+                        "_command": "remove_connection",
+                        "connection": self
+                    })
         if self.pinger_thread and self.pinger_thread != current_thread():
-            self.pinger_thread.join()
+            self.pinger_thread.join(4.0)
         if self.watchdog_thread and self.watchdog_thread != current_thread():
-            self.watchdog_thread.join()
+            self.watchdog_thread.join(4.0)
         if self.reconnect_thread and self.reconnect_thread != current_thread():
-            self.reconnect_thread.join()
+            self.reconnect_thread.join(4.0)
         self.logger.info("Connection terminated successfully...")
-        GroupConnection.event_queue.put({"type": "disconnected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+        if GroupConnection.event_queue:
+            GroupConnection.event_queue.put({"type": "disconnected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
     
     def send_msg(self, msg, call_filters = True):
         if self.connection_state != "ESTABLISHED":                      # not connected
@@ -228,7 +233,7 @@ class GroupConnection(object):
         # our connection is now established, inform router of the new connection and activate pinger thread
         self.connection_state = "ESTABLISHED"
         self.reconnect_try = 0  # connection successful, reset reconnection counter
-        self.pinger_thread = Thread(name="local::"+GroupConnection.node_id+"::_pinger", target=self._pinger)
+        self.pinger_thread = Thread(name="local::"+GroupConnection.node_id+"::_pinger", target=self._pinger, daemon=True)
         self.pinger_thread.start()
         self.logger.info("Connection with %s initialized" % str(self.addr))
         GroupConnection.event_queue.put({"type": "connected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
@@ -298,6 +303,8 @@ class GroupConnection(object):
                     if not filters.msg_incoming(msg, self):     # call filters framework
                         GroupConnection.router_queue.put({"_command": "message_received", "connection": self, "message": msg})
     
+    # *** internal threads ***
+    @catch_exceptions(logger=logger)
     def _reconnect(self):
         # try to reconnect after (PING_INTERVAL * MAX_MISSING_PINGS) + random(0, 2) seconds
         reconnect = (
@@ -310,7 +317,7 @@ class GroupConnection(object):
         else:
             self.logger.info("Reconnection cancelled...")
     
-    # *** internal threads ***
+    @catch_exceptions(logger=logger)
     def _watchdog(self):
         while not self.is_dead.wait(GroupConnection.settings["PING_INTERVAL"]):
             with self.watchdog_lock:
@@ -321,7 +328,7 @@ class GroupConnection(object):
                 self.terminate()
                 if self.active_init and self.reconnect_try < GroupConnection.settings["MAX_RECONNECTS"]:
                     if not GroupConnection.reconnections_stopped.is_set():
-                        self.reconnect_thread = Thread(name="local::"+GroupConnection.node_id+"::_reconnect", target=self._reconnect)
+                        self.reconnect_thread = Thread(name="local::"+GroupConnection.node_id+"::_reconnect", target=self._reconnect, daemon=True)
                         self.reconnect_thread.start()
                     else:
                         self.logger.info("Reconnections disallowed by shutdown, not trying to reconnect...")
@@ -329,6 +336,7 @@ class GroupConnection(object):
                     self.logger.info("Not active_init or maximum reconnects of %s reached, not trying to reconnect..." % str(GroupConnection.settings["MAX_RECONNECTS"]))
     
     # the pinger utilizes our covert channel filled with messages from covert_msg_queue
+    @catch_exceptions(logger=logger)
     def _pinger(self):
         while not self.is_dead.wait(GroupConnection.settings["PING_INTERVAL"]):
             bytes_left = GroupConnection.settings["MAX_COVERT_PAYLOAD"]
@@ -355,7 +363,7 @@ class GroupConnection(object):
             try:
                 GroupConnection.listener.get_socket().sendto(data, self.addr)
             except Exception as e:
-                self.logger.warning("Could not packet to '%s', terminating connection! Exception: %s" % (str(self.addr), str(e)))
+                self.logger.warning("Could not send packet to '%s', terminating connection! Exception: %s" % (str(self.addr), str(e)))
                 self.terminate()
         
     def _encrypt(self, packet):

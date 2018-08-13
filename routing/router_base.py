@@ -8,6 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # own classes
+from utils import catch_exceptions
 import filters
 from networking import Message
 
@@ -22,18 +23,18 @@ class RouterBase(object):
         self.connections = {}
         self.timers = SortedList(key=itemgetter('timeout'))
         self.timers_condition = Condition()
-        self.timers_thread = Thread(name="local::"+self.node_id+"::_timers", target=self._timers)
+        self.timers_thread = Thread(name="local::"+self.node_id+"::_timers", target=self._timers, daemon=True)
         self.timers_thread.start()
-        self.routing_thread = Thread(name="local::"+self.node_id+"::_routing", target=self._routing)
+        self.routing_thread = Thread(name="local::"+self.node_id+"::_routing", target=self._routing, daemon=True)
         self.routing_thread.start()
     
     def stop(self):
         RouterBase.stopped.set()    # this will stop the _routing thread which terminates all connections (no lock on self.connections needed)
-        self.queue.put({})      # empty put to wake up _routing thread after RouterBase.stopped is set to True
+        self.queue.put({})          # empty put to wake up _routing thread after RouterBase.stopped is set to True
         with self.timers_condition:
             self.timers_condition.notify()  # stop wait in _timers thread
-        self.routing_thread.join()
-        self.timers_thread.join()
+        self.routing_thread.join(4.0)
+        self.timers_thread.join(4.0)
         RouterBase.stopped.clear()  # all threads terminated, clear flag again to allow for new initialisations
     
     # this dumps internal data structures
@@ -110,6 +111,7 @@ class RouterBase(object):
                     getattr(self, func)(message, connection)
     
     # *** internal threads ***
+    @catch_exceptions(logger=logger)
     def _timers(self):
         logger.debug("timers thread started...");
         while not RouterBase.stopped.isSet():
@@ -139,6 +141,7 @@ class RouterBase(object):
                 self.timers = SortedList(iterable=[entry for entry in self.timers if entry["id"] not in expired], key=itemgetter('timeout'))
         logger.debug("timers thread stopped...")
     
+    @catch_exceptions(logger=logger)
     def _routing(self):
         logger.debug("routing thread started...");
         while not RouterBase.stopped.isSet():

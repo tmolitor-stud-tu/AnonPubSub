@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 # needed for pretty serialisation
 from networking import Connection
+from utils import catch_exceptions
 
 class ComplexJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -41,16 +42,17 @@ class Server(object):
         self.no_generator_running = Event()
         self.no_generator_running.set()
         self.base = "%s/static" % os.path.dirname(os.path.realpath(__file__))
-        self.cherrypy_thread = Thread(name="local::cherrypy_master", target=self._run)
+        self.cherrypy_thread = Thread(name="local::cherrypy_master", target=self._run, daemon=True)
         self.cherrypy_thread.start()
     
     def stop(self):
         self.event_queue.put(None)  # wakeup and stop events generator function
         logger.warning("Stopping cherrypy engine...")
         cherrypy.engine.exit()
-        self.cherrypy_thread.join()
+        self.cherrypy_thread.join(8.0)
         logger.warning("Cherrypy engine stopped...")
     
+    @catch_exceptions(logger=logger)
     def _run(self):
         logger.debug("cherrypy master thread started...")
         conf = {

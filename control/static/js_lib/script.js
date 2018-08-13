@@ -1038,7 +1038,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 	
 	
 	//high level api events (backend events)
-	$(document).on("aps.backend.open", function(event, node, data, sse_event) {
+	$(document).on("aps.backend.open", function(event, node, data) {
 		append_to_log(node, $("<span>").addClass("ok").text((new Date().toLocaleString())+" SSE connection to '"+node.data.ip+"' established!").append($("<br>")));
 		node.data.obj.find(".overlay").hide();
 	});
@@ -1052,14 +1052,31 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 			update_led(node, led, "");
 	});
 	$(document).on("aps.backend.log", function(event, node, d) {	//use d instead of data for better readability
-		var msg = $("<span>").text(`${d.asctime} ${node.data.ip} [${str_pad(Array(7+1).join("\u00A0"), d.levelname)}] ${d.name} {${d.threadName}} ${d.filename}:${d.lineno}: ${d.message}`).append($("<br>"));
-		msg.attr("data-host", node.data.ip);
-		msg.attr("data-levelname", d.levelname);
-		msg.attr("data-module", d.module);
-		msg.attr("data-name", d.name);
-		msg.attr("data-threadname", (d.threadName || "").split("::").pop());	//only the last element of thread id is used for filtering
-		
-		append_to_log(node, msg);
+		var add_attributes = function(msg) {
+			msg.attr("data-host", node.data.ip);
+			msg.attr("data-levelname", d.levelname);
+			msg.attr("data-module", d.module);
+			msg.attr("data-name", d.name);
+			msg.attr("data-threadname", (d.threadName || "").split("::").pop());	//only the last element of thread id is used for filtering
+			return msg;
+		}
+		append_to_log(node, add_attributes($("<span>").text(`${d.asctime} ${node.data.ip} [${str_pad(Array(7+1).join("\u00A0"), d.levelname)}] ${d.name} {${d.threadName}} ${d.filename}:${d.lineno}: ${d.message}`).append($("<br>"))));
+
+		//log exception text if given
+		if(d.exc_text)
+		{
+			//normalize line endings
+			d.exc_text = (d.exc_text + "").replace(/([^>\r\n]?)(\r\n|\n\r|\r|\n)/g, "$1\n");
+			//append lines to log
+			$.each(d.exc_text.split("\n"), function(_, line) {
+				//normalize tabs and spaces
+				line = (line + "").replace(/\t/g, "\xa0\xa0\xa0\xa0");		//non breakable space
+				var matches = (line + "").match(/([ ]*)([^ ].*)/);
+				line = matches[1].replace(/ /g, "\xa0") + matches[2];		//non breakable space
+				//append line to log
+				append_to_log(node, add_attributes($("<span>").text(line).append($("<br>"))));
+			});
+		}
 	});
 	$(document).on("aps.backend.node_id", function(event, node, data) {
 		node.data.uuid = data.node_id;		//update uuid value on node object

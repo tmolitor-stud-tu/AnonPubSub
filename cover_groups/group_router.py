@@ -1,10 +1,8 @@
-import uuid
 from queue import Queue, Empty, Full
 import logging
 logger = logging.getLogger(__name__)
 
 #own classes
-import filters
 from routing import RouterBase
 from networking import GroupConnection
 from networking import Message
