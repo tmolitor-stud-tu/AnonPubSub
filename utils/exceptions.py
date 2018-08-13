@@ -12,7 +12,7 @@ def catch_exceptions(exception=Exception, logger=logging.getLogger(__name__)):
                 return func(*args, **kwargs)
             except exception as err:
                 logger.exception(err)
-                logger.error("Shutting down immediately due to exception!")
+                logger.error("Shutting down immediately due to exception in child thread!")
                 _thread.interrupt_main()
                 return None
         return wrapper

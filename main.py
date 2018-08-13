@@ -50,6 +50,7 @@ def cleanup_and_exit(code=0):
     global router, server
     signal.signal(signal.SIGINT, signal.SIG_IGN)    # ignore SIGINT while shutting down
     logger.warning("Shutting down!")
+    time.sleep(1);          # wait some time to give other threads a chance to deliver pending events via SSE
     if router:
         router.stop()
     networking.Connection.shutdown()
@@ -94,119 +95,123 @@ def subscribe(command, router, received):
                 logger.warning("UNEXPECTED DATA RECEIVED (%s != %s)!!!" % (str(data), str(received[command["channel"]] + 1)))
             received[command["channel"]] = data
         router.subscribe(command["channel"], dummy_receiver)
-while True:
-    # periodically publish a simple counter on all configured channels (about every second or every incoming command (whichever comes first))
-    for channel in to_publish:
-        if router:  # only publish if we have a router
-            # try to publish via cover group and publish directly if we are in no cover group for this channel
-            if not group_router.publish(channel, to_publish[channel]):
-                router.publish(channel, to_publish[channel]);
-            to_publish[channel] += 1
+try:
+    while True:
+        # periodically publish a simple counter on all configured channels (about every second or every incoming command (whichever comes first))
+        for channel in to_publish:
+            if router:  # only publish if we have a router
+                # try to publish via cover group and publish directly if we are in no cover group for this channel
+                if not group_router.publish(channel, to_publish[channel]):
+                    router.publish(channel, to_publish[channel]);
+                to_publish[channel] += 1
+            else:
+                logger.error("Cannot publish on channel '%s': no router initialized!" % str(channel))
+        
+        # process UI commands
+        command_failed = False
+        try:
+            command = command_queue.get(True, 1)   # 1 second timeout
+        except Empty as err:
+            #logger.debug("main command queue empty")
+            continue
+        if command["_command"][:1] != "_":       # don't log internal commands
+            logger.debug("Got GUI command: %s" % str(command))
+        if command["_command"] == "start":
+            if not router:
+                # try to determine router class
+                try:
+                    router_class = getattr(routing, command["router"])
+                except AttributeError:
+                    fail_command(command, "Cannot start router '%s': unknown" % str(command["router"]))
+                    continue
+                
+                # apply settings if present
+                apply_settings(command["settings"], ["networking", "Connection"], networking.Connection)
+                apply_settings(command["settings"], ["routing", "Router"], routing.Router)
+                apply_settings(command["settings"], ["cover_groups", "GroupRouter"], cover_groups.GroupRouter)
+                apply_settings(command["settings"], ["routing", command["router"]], router_class)
+                
+                # initialize networking and router
+                queue = Queue()
+                group_queue = Queue()
+                networking.Connection.init(node_id, queue, args.listen, 9999, event_queue)
+                networking.GroupConnection.init(node_id, group_queue, args.listen, 9998, event_queue)
+                router = router_class(node_id, queue)
+                group_router = cover_groups.GroupRouter(node_id, group_queue, router)
+                filters.update_attributes({"router": router, "group_router": group_router})
+            else:
+                fail_command(command, "Cannot start new router '%s': old router still initialized" % str(command["router"]))
+        elif command["_command"] == "stop":
+            if router:
+                router.stop()
+                router = None
+                group_router = None
+            networking.Connection.shutdown()
+            queue = None
+            group_queue = None
+            to_publish = {}
+            received = {}
+        elif command["_command"] == "reset":
+            logger.debug("GUI command completed: %s" % str(command["_id"]))
+            event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
+            command_queue.task_done()
+            cleanup_and_exit(0)     # the startup script will restart this node after a few seconds
+        elif command["_command"] == "connect":
+            if router:  # router and network are initialized at once, if we have no router our network is down, too
+                networking.Connection.connect_to(command["addr"])
+            else:
+                fail_command(command, "Cannot connect to peer at %s: network not initialized!" % str(command["addr"]))
+        elif command["_command"] == "disconnect":
+            if router:  # router and network are initialized at once, if we have no router our network is down, too
+                networking.Connection.disconnect_from(command["addr"])
+            else:
+                fail_command(command, "Cannot disconnect from peer at %s: network not initialized!" % str(command["addr"]))
+        elif command["_command"] == "publish":
+            if router:
+                to_publish[command["channel"]] = 0
+            else:
+                fail_command(command, "Cannot publish on channel '%s': no router initialized!" % str(command["channel"]))
+        elif command["_command"] == "unpublish":
+            if router:
+                if command["channel"] in to_publish:
+                    del to_publish[command["channel"]]
+                router.unpublish(command["channel"])
+            else:
+                fail_command(command, "Cannot unpublish on channel '%s': no router initialized!" % str(command["channel"]))
+        elif command["_command"] == "subscribe":
+            if router:  # only subscribe if we have a router
+                subscribe(command, router, received)
+            else:
+                fail_command(command, "Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
+        elif command["_command"] == "unsubscribe":
+            if router:  # only unsubscribe if we have a router
+                router.unsubscribe(command["channel"])
+            else:
+                fail_command(command, "Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
+        elif command["_command"] == "dump":
+            def cb(state):
+                event_queue.put({"type": "state", "data": state})
+            if router:
+                router.dump(cb)
+        elif command["_command"] == "load_filters":
+            # load filter definitions
+            retval = filters.load(command["code"], {"leds": all_leds, "router": router})
+            if retval:
+                fail_command(command, retval)
+        elif command["_command"] == "create_group":
+            if group_router:
+                group_router.create_group(command["channel"], command["ips"], command["interval"])
+            else:
+                fail_command(command, "Cannot create covergroup for channel '%s': no group_router initialized!" % str(command["channel"]))
+        elif command["_command"] == "_new_http_client":
+            event_queue.put({"type": "node_id", "data": {"node_id": node_id}})
         else:
-            logger.error("Cannot publish on channel '%s': no router initialized!" % str(channel))
-    
-    # process UI commands
-    command_failed = False
-    try:
-        command = command_queue.get(True, 1)   # 1 second timeout
-    except Empty as err:
-        #logger.debug("main command queue empty")
-        continue
-    if command["_command"][:1] != "_":       # don't log internal commands
-        logger.debug("Got GUI command: %s" % str(command))
-    if command["_command"] == "start":
-        if not router:
-            # try to determine router class
-            try:
-                router_class = getattr(routing, command["router"])
-            except AttributeError:
-                fail_command(command, "Cannot start router '%s': unknown" % str(command["router"]))
-                continue
-            
-            # apply settings if present
-            apply_settings(command["settings"], ["networking", "Connection"], networking.Connection)
-            apply_settings(command["settings"], ["routing", "Router"], routing.Router)
-            apply_settings(command["settings"], ["cover_groups", "GroupRouter"], cover_groups.GroupRouter)
-            apply_settings(command["settings"], ["routing", command["router"]], router_class)
-            
-            # initialize networking and router
-            queue = Queue()
-            group_queue = Queue()
-            networking.Connection.init(node_id, queue, args.listen, 9999, event_queue)
-            networking.GroupConnection.init(node_id, group_queue, args.listen, 9998, event_queue)
-            router = router_class(node_id, queue)
-            group_router = cover_groups.GroupRouter(node_id, group_queue, router)
-            filters.update_attributes({"router": router, "group_router": group_router})
-        else:
-            fail_command(command, "Cannot start new router '%s': old router still initialized" % str(command["router"]))
-    elif command["_command"] == "stop":
-        if router:
-            router.stop()
-            router = None
-            group_router = None
-        networking.Connection.shutdown()
-        queue = None
-        group_queue = None
-        to_publish = {}
-        received = {}
-    elif command["_command"] == "reset":
-        logger.debug("GUI command completed: %s" % str(command["_id"]))
-        event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
+            fail_command(command, "Ignoring unknown GUI command: %s" % str(command["_id"]))
+        if command["_command"][:1] != "_" and not command_failed:       # don't ack internal or failed commands
+            logger.debug("GUI command completed: %s" % str(command["_id"]))
+            event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
         command_queue.task_done()
-        time.sleep(1);          # wait some time to give other threads a chance to deliver pending events via SSE
-        cleanup_and_exit(0)     # the startup script will restart this node after a few seconds
-    elif command["_command"] == "connect":
-        if router:  # router and network are initialized at once, if we have no router our network is down, too
-            networking.Connection.connect_to(command["addr"])
-        else:
-            fail_command(command, "Cannot connect to peer at %s: network not initialized!" % str(command["addr"]))
-    elif command["_command"] == "disconnect":
-        if router:  # router and network are initialized at once, if we have no router our network is down, too
-            networking.Connection.disconnect_from(command["addr"])
-        else:
-            fail_command(command, "Cannot disconnect from peer at %s: network not initialized!" % str(command["addr"]))
-    elif command["_command"] == "publish":
-        if router:
-            to_publish[command["channel"]] = 0
-        else:
-            fail_command(command, "Cannot publish on channel '%s': no router initialized!" % str(command["channel"]))
-    elif command["_command"] == "unpublish":
-        if router:
-            if command["channel"] in to_publish:
-                del to_publish[command["channel"]]
-            router.unpublish(command["channel"])
-        else:
-            fail_command(command, "Cannot unpublish on channel '%s': no router initialized!" % str(command["channel"]))
-    elif command["_command"] == "subscribe":
-        if router:  # only subscribe if we have a router
-            subscribe(command, router, received)
-        else:
-            fail_command(command, "Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
-    elif command["_command"] == "unsubscribe":
-        if router:  # only unsubscribe if we have a router
-            router.unsubscribe(command["channel"])
-        else:
-            fail_command(command, "Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
-    elif command["_command"] == "dump":
-        def cb(state):
-            event_queue.put({"type": "state", "data": state})
-        if router:
-            router.dump(cb)
-    elif command["_command"] == "load_filters":
-        # load filter definitions
-        retval = filters.load(command["code"], {"leds": all_leds, "router": router})
-        if retval:
-            fail_command(command, retval)
-    elif command["_command"] == "create_group":
-        if group_router:
-            group_router.create_group(command["channel"], command["ips"], command["interval"])
-        else:
-            fail_command(command, "Cannot create covergroup for channel '%s': no group_router initialized!" % str(command["channel"]))
-    elif command["_command"] == "_new_http_client":
-        event_queue.put({"type": "node_id", "data": {"node_id": node_id}})
-    else:
-        fail_command(command, "Ignoring unknown GUI command: %s" % str(command["_id"]))
-    if command["_command"][:1] != "_" and not command_failed:       # don't ack internal or failed commands
-        logger.debug("GUI command completed: %s" % str(command["_id"]))
-        event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
-    command_queue.task_done()
+except exception as err:
+    logger.exception(err)
+    logger.error("Shutting down immediately due to exceptionin main thread!")
+    cleanup_and_exit(1)     # indicate unclean shutdown
