@@ -23,7 +23,9 @@ class Randomwalk(Router):
             logger.warning("Ignoring data because of expired ttl!")
             return
         
-        self._forward_data(msg)     # inform own subscribers of new data
+        if self._forward_data(msg):     # inform own subscribers of new data and determine if data is fresh
+            logger.info("Data ID already seen, ignoring it and not routing further...")
+            return
         
         msg["ttl"] -= 1
         msg["nodes"].append(self.node_id)

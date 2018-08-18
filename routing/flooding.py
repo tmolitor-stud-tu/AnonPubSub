@@ -443,7 +443,9 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         
         # route normal data messages along active paths to subscribers
         
-        self._forward_data(msg)     # inform own subscribers of new data
+        if self._forward_data(msg):     # inform own subscribers of new data and determine if data is fresh
+            logger.info("Data ID already seen, ignoring it and not routing further...")
+            return
         
         # calculate list of next nodes to route a (data) messages to according to the active edges (and don't add our incoming peer here)
         connections = self._ActivePathsMixin__get_next_hops(msg["channel"], incoming_peer)
