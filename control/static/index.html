@@ -232,6 +232,10 @@
 					<td>Probabilistic forwarding fraction:</td>
 					<td><input type="number" value="0.25" min="0" max="1" step="0.05" class="setting" data-setting="routing.Flooding.PROBABILISTIC_FORWARDING_FRACTION"></td>
 				</tr>
+				<tr title="If a node join creates a new shortest path: reflood advertisements into the whole overlay instead of stopping when a (longer) path for this publisher is already known (this will create higher load)">
+					<td>Aggressive reflooding:</td>
+					<td><label><input type="checkbox" data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="routing.Flooding.AGGRESSIVE_REFLOODING"> true</label></td>
+				</tr>
 				</table>
 			</div>
 			<div class="router-settings router-Randomwalk">

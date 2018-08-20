@@ -41,6 +41,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         "MIN_BECOME_MASTER_DELAY": 1.0,
         "MAX_BECOME_MASTER_DELAY": 8.0,
         "PROBABILISTIC_FORWARDING_FRACTION": 0.25,      # fraction of neighbors to select for probabilistic forwarding
+        "AGGRESSIVE_REFLOODING": True,
     }
     
     def __init__(self, node_id, queue):
@@ -397,7 +398,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
                 self._route_covert_data(Message("%s_advertise" % self.__class__.__name__, {
                     "channel": channel,
                     "nonce": nonce,
-                    "reflood": True
+                    "reflood": False if Flooding.settings["AGGRESSIVE_REFLOODING"] else True,
                 }), incoming_connection)
     
     def _route_data(self, msg, incoming_connection=None):
@@ -652,7 +653,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
             self._send_covert_msg(Message("%s_advertise" % self.__class__.__name__, {
                 "channel": channel,
                 "nonce": str(base64.b64encode(self._hash(nonce)), "ascii"),
-                "reflood": True
+                "reflood": True,        # this has to remain hardcoded at true
             }), con)
     
     def __create_overlay_command(self, command):

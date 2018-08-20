@@ -211,7 +211,7 @@ try:
             logger.debug("GUI command completed: %s" % str(command["_id"]))
             event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
         command_queue.task_done()
-except exception as err:
+except Exception as err:
     logger.exception(err)
     logger.error("Shutting down immediately due to exceptionin main thread!")
     cleanup_and_exit(1)     # indicate unclean shutdown
