@@ -495,8 +495,8 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         self._ActivePathsMixin__cleanup(command["connection"])
         
         # extract all nonces of this peer for which we have to unadvertise paths
-        unadvertise = set()
         for channel in self.advertisement_routing_table:
+            unadvertise = set()
             for chain in self.advertisement_routing_table[channel]:
                 for nonce in self.advertisement_routing_table[channel][chain]:
                     for node_id in self.advertisement_routing_table[channel][chain][nonce]:
@@ -505,15 +505,14 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
                             if Flooding.settings["ANONYMOUS_IDS"]:
                                 for x in range(SystemRandom().randint(0, 32)):
                                     nonce = self._hash(nonce)
-                            unadvertise.add(nonce)
-        
-        # unadvertise paths coming from this peer
-        for nonce in unadvertise:
-            self._route_covert_data(Message("%s_unadvertise" % self.__class__.__name__, {
-                "channel": channel,
-                "chain": str(base64.b64encode(nonce), "ascii"),
-                "force": False,
-            }), command["connection"])
+                            unadvertise.add(nonce)        
+            # unadvertise paths coming from this peer
+            for nonce in unadvertise:
+                self._route_covert_data(Message("%s_unadvertise" % self.__class__.__name__, {
+                    "channel": channel,
+                    "chain": str(base64.b64encode(nonce), "ascii"),
+                    "force": False,
+                }), command["connection"])
     
     def _publish_command(self, command):
         # no need to call parent class here, doing everything on our own

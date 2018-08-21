@@ -89,12 +89,12 @@ class Server(object):
                 self.no_generator_running.clear()
                 
                 if self.event_queue.qsize() > 128:
-                    logger.debug("Event queue is too big (~%d entries), removing all but 128 entries..." % self.event_queue.qsize())
+                    logger.debug("Event queue is too big (~ %d entries), removing all but 128 entries..." % self.event_queue.qsize())
                     while self.event_queue.qsize() > 128:
                         self.event_queue.get_nowait()
                         self.event_queue.task_done()
                 
-                logger.debug("Starting SSE stream (~%d entries in event queue)..." % self.event_queue.qsize())
+                logger.debug("Starting SSE stream (~ %d entries in event queue)..." % self.event_queue.qsize())
                 try:
                     while True:
                         try:

@@ -114,7 +114,7 @@ class GroupConnection(object):
         self.instance_id = str(binascii.hexlify(os.urandom(2)), 'ascii')
         self.logger=configure_logger(self.addr, self.instance_id)
         self.is_dead = Event()
-        if Connection.settings["ENCRYPT_PACKETS"]:
+        if GroupConnection.settings["ENCRYPT_PACKETS"]:
             self.X25519_key = X25519PrivateKey.generate()
         self.peer_key = None
         self.peer_id = None
@@ -204,7 +204,7 @@ class GroupConnection(object):
         data = bytearray(flag, 'ascii')
         if flag == "SYN" or flag == "SYN-ACK":      # add key exchange data to SYN and SYN-ACK messages
             data += bytes(GroupConnection.node_id, 'ascii')
-            if Connection.settings["ENCRYPT_PACKETS"]:
+            if GroupConnection.settings["ENCRYPT_PACKETS"]:
                 data += self.X25519_key.public_key().public_bytes()
             else:
                 data += os.urandom(32)      # dummy data
@@ -216,7 +216,7 @@ class GroupConnection(object):
         try:
             if len(data) != 32:
                 raise ValueError("Key material size is not 32 bytes")
-            if Connection.settings["ENCRYPT_PACKETS"]:
+            if GroupConnection.settings["ENCRYPT_PACKETS"]:
                 # derive symmetric peer_key used to encrypt further communication
                 self.peer_key = HKDF(
                     algorithm=hashes.BLAKE2s(32),

@@ -141,6 +141,7 @@ try:
         elif command["_command"] == "stop":
             if router:
                 router.stop()
+                group_router.stop()
                 router = None
                 group_router = None
             networking.Connection.shutdown()
