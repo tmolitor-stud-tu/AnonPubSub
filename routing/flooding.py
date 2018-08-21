@@ -82,7 +82,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
     
     @functools.lru_cache(maxsize=4096)  # ~4 * settings["MAX_HASHES"] (power of 2 is faster)
     def _hash(self, nonce):
-        digest = hashes.Hash(hashes.BLAKE2s(32), backend=default_backend())
+        digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
         digest.update(nonce)
         return digest.finalize()
     
@@ -213,21 +213,27 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
                     # randomly pick one item of our filtered peer_set and return None if it is empty
                     node_id = next(iter(peer_set), None)
         
+        # this is the publisher we are activating the edge for
+        publisher = self._canonize_active_path_identifier(subscription["channel"], subscription["chain"])
+        
+        if not node_id and (not self.master[subscription["channel"]] or None not in peer_set):
+            logger.warning("Could not find peer to route subscription to and we are not the master (%s) this message was for, returning error!" % str(publisher))
+            self._ActivePathsMixin__send_error_reply(subscription, publisher, incoming_connection)
+            return
+        
         # active edges always point from publisher to subsciber (e.g. from self.connections[node_id] to incoming_connection)
         self._ActivePathsMixin__activate_edge(
             subscription["channel"],
             subscription["subscriber"],
-            # this is the publisher we are activating the edge for
-            self._canonize_active_path_identifier(subscription["channel"], subscription["chain"]),
+            publisher,
             subscription["version"],
-            self.connections[node_id] if node_id else None,         # use None if the active path is starting here (we are the master publisher)
+            # use None if the active path is starting here (we are the master publisher) or if we don't know any path to the intended publisher
+            self.connections[node_id] if node_id else None,
             incoming_connection)                                    # incoming_connection is where the active edge should point to
         
         if node_id:
             logger.info("Routing subscription to %s..." % self.connections[node_id])
             self._send_covert_msg(subscription, self.connections[node_id])
-        elif not self.master[subscription["channel"]] or None not in peer_set:
-            logger.warning("Could not find peer to route subscription to and we are not the master this message is for!")
         else:
             logger.info("We are the master the subscription was sent to, so we are not going to route it further...")
     
@@ -238,9 +244,11 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         error["publisher"] = self._canonize_active_path_identifier(error["channel"], error["publisher"])
         
         def recreate_overlay(error):
-            logger.warning("Recreating broken overlay for channel '%s' in %.3f seconds..." % (error["channel"], Flooding.settings["SUBSCRIBE_DELAY"]))
+            logger.warning("Recreating broken overlay for channel '%s' and publisher '%s' in %.3f seconds..." % (error["channel"], error["publisher"], Flooding.settings["SUBSCRIBE_DELAY"]))
             chain = base64.b64decode(bytes(error["publisher"], "ascii"))
             chain = self._find_nonce(chain, self.advertisement_routing_table[error["channel"]])
+            if not chain:       # use value from error message, if chain cannot be found in advertisement routing table
+                chain = base64.b64decode(bytes(error["publisher"], "ascii"))
             
             # send subscribe request if needed (make sure we wait the full SUBSCRIBE_DELAY seconds until we subscribe)
             if chain in self.subscription_timers[error["channel"]]:
@@ -657,13 +665,15 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
             }), con)
     
     def __create_overlay_command(self, command):
-        del self.subscription_timers[command["channel"]]
-        
         # only create overlay if we (still) know a master publisher for this channel
         chain = self._find_nonce(command["chain"], self.advertisement_routing_table[command["channel"]])
         if not chain:
             logger.warning("NOT creating overlay for channel '%s', no known master publisher for this channel..." % str(command["channel"]))
             return
+        
+        if chain in self.subscription_timers[command["channel"]]:
+            self._abort_timer(self.subscription_timers[command["channel"]][chain])
+            del self.subscription_timers[command["channel"]][chain]
         
         # map publisher nonce to the identifier used by the ActivePathsMixin
         publisher = self._canonize_active_path_identifier(command["channel"], str(base64.b64encode(chain), "ascii"))

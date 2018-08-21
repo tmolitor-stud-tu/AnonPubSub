@@ -48,20 +48,16 @@ group_queue = None
 # use this to cleanup the system and exit
 def cleanup_and_exit(code=0):
     global router, server
-    signal.signal(signal.SIGINT, signal.SIG_IGN)    # ignore SIGINT while shutting down
-    logger.warning("Shutting down!")
-    time.sleep(1);          # wait some time to give other threads a chance to deliver pending events via SSE
-    if router:
-        router.stop()
-    networking.Connection.shutdown()
-    server.stop()
+    try:
+        logger.warning("Shutting down!")
+        time.sleep(1);          # wait some time to give other threads a chance to deliver pending events via SSE
+        if router:
+            router.stop()
+        networking.Connection.shutdown()
+        server.stop()
+    except KeyboardInterrupt as err:        # subsequent keyboard interrupts trigger fast shutdown (kill mode)
+        logger.warning("Got interrupted again, killing myself!!")
     sys.exit(code)
-
-# cleanup on sigint (CTRL-C)
-def sigint_handler(sig, frame):
-    logger.warning("Got interrupted, shutting down!")
-    cleanup_and_exit(0)
-signal.signal(signal.SIGINT, sigint_handler)
 
 
 # our mainloop and some aux functions it uses
@@ -211,6 +207,9 @@ try:
             logger.debug("GUI command completed: %s" % str(command["_id"]))
             event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
         command_queue.task_done()
+except KeyboardInterrupt as err:
+    logger.warning("Got interrupted, shutting down!")
+    cleanup_and_exit(0)    
 except Exception as err:
     logger.exception(err)
     logger.error("Shutting down immediately due to exceptionin main thread!")

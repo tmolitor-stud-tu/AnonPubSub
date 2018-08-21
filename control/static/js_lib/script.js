@@ -328,6 +328,11 @@ var create_overlay = function(data) {
 				map[source]=[];
 			map[source].push(target);
 		};
+		if(info.sourceId == info.targetId)
+		{
+			alert("Nodes cannot connect to themselves!");
+			return false;	//disallow connection drop
+		}
 		//build a map of all connections
 		for(let c=0; c<connections.length; c++)
 			add_to_map(connections[c].sourceId, connections[c].targetId);
@@ -935,8 +940,14 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 	$(document).on("click", ".node-settings .actions .create-group", function() {
 		var node = $(this).closest(".node-settings").data("node");
 		var channel = window.prompt("What channel to create covergroup for?","test");
+		if(channel==null)
+			return;
 		var ips = window.prompt("List of IPs to connect to (comma separated):","127.0.0.22,127.0.0.30,127.0.0.20");
+		if(ips==null)
+			return;
 		var interval = window.prompt("Message interval (should be the smallest publish interval of all publishers in group:","0.5");
+		if(interval==null)
+			return;
 		send_command(node.data.ip, "create_group", {
 			channel: channel,
 			ips: ips.split(','),

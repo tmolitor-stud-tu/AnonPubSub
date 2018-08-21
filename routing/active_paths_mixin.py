@@ -67,6 +67,14 @@ class ActivePathsMixin(object):
                     if self.__reverse_edges[channel][subscriber][publisher]["peer"] == peer:
                         del self.__reverse_edges[channel][subscriber][publisher]
     
+    def __send_error_reply(self, subscription, publisher, incoming_connection):
+        logger.info("Sending error reply to %s..." % str(incoming_connection))
+        self._send_covert_msg(Message("%s_error" % self.__class__.__name__, {
+            "channel": subscription["channel"],
+            "subscriber": subscription["subscriber"],
+            "publisher": publisher
+        }), incoming_connection)
+    
     def __unpublish(self, channel, publisher):
         self._route_covert_data(Message("%s_unpublish" % self.__class__.__name__, {
             "channel": channel,
