@@ -54,6 +54,7 @@ def cleanup_and_exit(code=0):
         if router:
             router.stop()
         networking.Connection.shutdown()
+        networking.GroupConnection.shutdown()
         server.stop()
     except KeyboardInterrupt as err:        # subsequent keyboard interrupts trigger fast shutdown (kill mode)
         logger.warning("Got interrupted again, killing myself!!")
@@ -143,6 +144,7 @@ try:
                 router = None
                 group_router = None
             networking.Connection.shutdown()
+            networking.GroupConnection.shutdown()
             queue = None
             group_queue = None
             to_publish = {}
