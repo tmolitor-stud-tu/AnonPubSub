@@ -82,12 +82,19 @@ class Server(object):
                 if not self.no_generator_running.is_set():
                     logger.debug("Sending stop signal to old SSE generator...")
                     self.event_queue.put(None)  # wakeup and stop OLD events generator function
-                # wait for generator being stopped
-                logger.debug("Waiting for old SSE generator to exit...")
-                while not self.no_generator_running.wait(60):
-                    pass
+                    # wait for generator being stopped
+                    logger.debug("Waiting for old SSE generator to exit...")
+                    while not self.no_generator_running.wait(60):
+                        pass
                 self.no_generator_running.clear()
-                logger.debug("Starting SSE stream...")
+                
+                if self.event_queue.qsize() > 128:
+                    logger.debug("Event queue is too big (~%d entries), removing all but 128 entries..." % self.event_queue.qsize())
+                    while self.event_queue.qsize() > 128:
+                        self.event_queue.get_nowait()
+                        self.event_queue.task_done()
+                
+                logger.debug("Starting SSE stream (~%d entries in event queue)..." % self.event_queue.qsize())
                 try:
                     while True:
                         try:
