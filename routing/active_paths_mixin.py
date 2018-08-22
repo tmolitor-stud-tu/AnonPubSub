@@ -216,11 +216,17 @@ class ActivePathsMixin(object):
         self.__init_channel(error["channel"])
         incoming_peer = incoming_connection.get_peer_id() if incoming_connection else None
         
-        # recreate broken overlay if needed (we subscribed the channel and incoming_peer is a reverse active edge)
+        # abort routing of error message if incoming_peer is not a reverse active edge for this subsciber
+        # if a new active path was created, the reverse active edge pointing to the old next hop was replaced by the new one
+        # the search fot the old edge (incoming_peer) will thus fail
         # edge versions are not relevant here
-        if subscriber_id and error["subscriber"] == subscriber_id:
-            if incoming_peer in set(itemgetter("peer")(entry) for entry in
+        if not incoming_peer in set(itemgetter("peer")(entry) for entry in
             self.__reverse_edges[error["channel"]][error["subscriber"]].values()):
+            logger.info("Not routing error further, incoming_peer is not a reverse active edge...")
+            return
+            
+        # recreate broken overlay if needed (we subscribed the channel)
+        if subscriber_id and error["subscriber"] == subscriber_id:
                 logger.warning("Received error, tearing down broken path to publisher %s on channel '%s'..." % (str(error["publisher"]), str(error["channel"])))
                 self._route_covert_data(Message("%s_teardown" % self.__class__.__name__, {
                     "channel": error["channel"],

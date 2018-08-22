@@ -140,12 +140,12 @@ try:
                 fail_command(command, "Cannot start new router '%s': old router still initialized" % str(command["router"]))
         elif command["_command"] == "stop":
             if router:
-                router.stop()
                 group_router.stop()
+                router.stop()
                 router = None
                 group_router = None
-            networking.Connection.shutdown()
             networking.GroupConnection.shutdown()
+            networking.Connection.shutdown()
             queue = None
             group_queue = None
             to_publish = {}
