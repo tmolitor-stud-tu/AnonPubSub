@@ -19,7 +19,7 @@ try:
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except Exception as e:
     logger.warning("Crypto imports failed, ignoring this (make sure to disable crypto in settings!!)")
 
@@ -220,7 +220,7 @@ class Connection(object):
             if Connection.settings["ENCRYPT_PACKETS"]:
                 # derive symmetric peer_key used to encrypt further communication
                 self.peer_key = HKDF(
-                    algorithm=hashes.BLAKE2s(32),
+                    algorithm=hashes.SHA256(32),
                     length=32,
                     salt=None,
                     info=None,
@@ -370,18 +370,18 @@ class Connection(object):
     def _encrypt(self, packet):
         if not Connection.settings["ENCRYPT_PACKETS"]:
             return packet
-        chacha = ChaCha20Poly1305(self.peer_key)
-        nonce = os.urandom(12)
-        return nonce + chacha.encrypt(nonce, packet, None)
+        cipher = AESGCM(self.peer_key)
+        nonce = os.urandom(13)
+        return nonce + cipher.encrypt(nonce, packet, None)
     
     def _decrypt(self, packet):
         if not Connection.settings["ENCRYPT_PACKETS"]:
             return packet
-        chacha = ChaCha20Poly1305(self.peer_key)
-        nonce = packet[:12]
-        ciphertext = packet[12:]
+        cipher = AESGCM(self.peer_key)
+        nonce = packet[:13]
+        ciphertext = packet[13:]
         try:
-            return chacha.decrypt(nonce, ciphertext, None)
+            return cipher.decrypt(nonce, ciphertext, None)
         except:
             return None
     

@@ -20,6 +20,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
     settings = {
         "ANONYMOUS_IDS": True,
         "ANT_COUNT": 5,
+        "ACTIVATING_ANTS": 2,
         "EVAPORATION_TIME": 5,
         "EVAPORATION_FACTOR": 0.75,
         "DEFAULT_ROUNDS": 15,
@@ -328,15 +329,14 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         # no need to call parent class here, doing everything on our own
         self._init_channel(command["channel"])
         
-        # init publishing identity and flood publishing advertisement to inform potential subscribers if automatic maintenance is deactivated
+        # init publishing identity and flood publishing advertisement to inform potential subscribers
         if command["channel"] not in self.publishing:
             self.publisher_ids[command["channel"]] = str(uuid.uuid4()) if ACO.settings["ANONYMOUS_IDS"] else self.node_id
             self.publishing.add(command["channel"])
-            if not ACO.settings["ANT_MAINTENANCE_TIME"]:
-                self._route_covert_data(Message("%s_publish" % self.__class__.__name__, {
-                    "channel": command["channel"],
-                    "publisher": self.publisher_ids[command["channel"]]
-                }))
+            self._route_covert_data(Message("%s_publish" % self.__class__.__name__, {
+                "channel": command["channel"],
+                "publisher": self.publisher_ids[command["channel"]]
+            }))
         
         msg = Message("%s_data" % self.__class__.__name__, {
             "channel": command["channel"],
@@ -462,7 +462,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
                 "pheromones": 1.0,                              # pheromones to put on each edge (can be changed per ant here, if needed)
                 "returning": False,
                 # try to activate paths every ACTIVATION_ROUNDS rounds
-                "activating": round_count % ACO.settings["ACTIVATION_ROUNDS"] == 0
+                "activating": round_count % ACO.settings["ACTIVATION_ROUNDS"] == 0 and i < ACO.settings["ACTIVATING_ANTS"]
             })
             con = self._pheromone_choice(ant["channel"], self.connections, ant["strictness"])
             if con:
