@@ -707,7 +707,6 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 		//let startup complete before trying to connect nodes
 		Promise.all(promises.map(reflect)).then(function() {
 			$(".grid-status .status").text("Connecting nodes...");
-			load_filters(true);		// (re)load filters (could be lost after resetting nodes)
 			promises = [];
 			$.each(connections, function(_, connection) {
 				var source_node = $(document.getElementById(connection.sourceId)).data("node");
