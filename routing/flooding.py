@@ -642,7 +642,8 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
     def __reflood_command(self, command):
         channel = command["channel"]
         chain = command["chain"]
-        del self.reflood_timers[channel][chain]
+        if chain in self.reflood_timers[channel]:
+            del self.reflood_timers[channel][chain]
         
         if chain not in self.advertisement_routing_table[channel]:
             logger.info("Not REflooding for chain '%s' on channel '%s', no alternatives found..." % (str(base64.b64encode(chain), "ascii"), channel))

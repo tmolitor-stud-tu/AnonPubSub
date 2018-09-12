@@ -116,11 +116,15 @@ class Connection(object):
     
     # public static method to terminate all connections
     @staticmethod
-    def shutdown():
-        logger.warning("Shutting down full networking...")
+    def shutdown(type_to_shutdown):
+        logger.warning("Shutting down full networking (types: %s)..." % type_to_shutdown if type_to_shutdown else "all")
         # extract list of initialized network types
         with Connection.global_lock:
             types = list(Connection.instances.keys())
+        types = [t for t in types if not type_to_shutdown or t==type_to_shutdown]
+        if not len(types):
+            logger.warning("Full networking shutdown: nothing to shutdown!")
+            return
         # stop all listeners without holding global_lock (listeners receiving data after this thread aqcuired the lock would otherwise deadlock)
         for connection_type in types:
             logger.warning("Stopping listener (type: %s)..." % connection_type)
@@ -132,9 +136,12 @@ class Connection(object):
         with Connection.global_lock:
             for connection_type in types:
                 logger.warning("Shutting down networking (type: %s)..." % connection_type)
-                # terminate all connections (has to be done AFTER stopping the listener so to not create new connections by incoming packets)
+                # terminate all connections (has to be done AFTER stopping the listener to not create new connections by incoming packets)
                 for con in list(Connection.instances[connection_type].values()):
                     con.terminate()
+                    # wait also for termination of reconnect_thread
+                    if con.reconnect_thread and con.reconnect_thread.is_alive() and con.reconnect_thread != current_thread():
+                        con.reconnect_thread.join(4.0 + (Connection.settings["PING_INTERVAL"] * Connection.settings["MAX_MISSING_PINGS"]))
                 # cleanup static class attributes
                 del Connection.instances[connection_type]
                 del Connection.node_id[connection_type]
@@ -147,6 +154,7 @@ class Connection(object):
         
     # class constructor
     def __init__(self, connection_type, addr, active_init, reconnect_try):
+        self.termination_lock = RLock()
         self.connection_type = connection_type
         self.addr = addr
         self.instance_id = str(binascii.hexlify(os.urandom(2)), 'ascii')
@@ -179,26 +187,27 @@ class Connection(object):
         self.watchdog_thread.start()
     
     def terminate(self):
-        self.logger.info("Terminating connection (type: %s)..." % self.connection_type)
-        if not self.is_dead.is_set():
-            self.logger.debug("closing connection...")
-            self.is_dead.set()
-            with Connection.global_lock:
-                if str(self.addr) in Connection.instances:
-                    del Connection.instances[str(self.addr)]
-            if self.connection_state == "ESTABLISHED":
-                Connection.router_queue[self.connection_type].put({
-                    "_command": "remove_connection",
-                    "connection": self
-                })
-        if self.pinger_thread and self.pinger_thread != current_thread():
-            self.pinger_thread.join(4.0)
-        if self.watchdog_thread and self.watchdog_thread != current_thread():
-            self.watchdog_thread.join(4.0)
-        if self.reconnect_thread and self.reconnect_thread != current_thread():
-            self.reconnect_thread.join(4.0)
-        self.logger.info("Connection (tpye: %s) terminated successfully..." % self.connection_type)
-        Connection.event_queue[self.connection_type].put({"type": "disconnected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+        with self.termination_lock:
+            if not self.is_dead.is_set():
+                self.logger.info("Terminating connection (type: %s)..." % self.connection_type)
+                self.logger.debug("closing connection...")
+                self.is_dead.set()
+                with Connection.global_lock:
+                    if str(self.addr) in Connection.instances:
+                        del Connection.instances[str(self.addr)]
+                if self.connection_state == "ESTABLISHED":
+                    Connection.router_queue[self.connection_type].put({
+                        "_command": "remove_connection",
+                        "connection": self
+                    })
+                if self.pinger_thread and self.pinger_thread.is_alive() and self.pinger_thread != current_thread():
+                    self.pinger_thread.join(4.0)
+                if self.watchdog_thread and self.watchdog_thread.is_alive() and self.watchdog_thread != current_thread():
+                    self.watchdog_thread.join(4.0)
+                self.logger.info("Connection (tpye: %s) terminated successfully..." % self.connection_type)
+                Connection.event_queue[self.connection_type].put({"type": "disconnected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+            else:
+                self.logger.info("Not terminating already dead connection (type: %s)..." % self.connection_type)
     
     def send_msg(self, msg, call_filters = True):
         if self.connection_state != "ESTABLISHED":                      # not connected
@@ -441,7 +450,9 @@ class Connection(object):
                 break;      # only padding bytes coming now, skip them
             self.logger.debug("got new packed message of size %d" % json_len)
             if json_len > 65536:		# 64 KiB
-                raise ValueError("Message size of %d > 65536 (64 KiB)" % json_len)
+                logger.warning("Ignoring message of size %d > 65536 (64 KiB), raw message content: %s" % (json_len, str(packet)))
+                return messages
+                #raise ValueError("Message size of %d > 65536 (64 KiB)" % json_len)
             data, packet = self._extract(packet, json_len)
             self.logger.debug("unpacked message json contents: %s" % data.decode("UTF-8"))
             messages.append(Message(data))

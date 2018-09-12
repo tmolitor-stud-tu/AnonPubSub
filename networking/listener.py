@@ -25,7 +25,7 @@ class Listener(object):
     
     def stop(self):
         self.run = False
-        if self.listener_thread != current_thread():
+        if self.listener_thread != current_thread() and self.listener_thread.is_alive():
             self.listener_thread.join(4.0)
         # close socket
         self.sock.close()

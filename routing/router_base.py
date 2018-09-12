@@ -33,8 +33,8 @@ class RouterBase(object):
         self.queue.put({})          # empty put to wake up _routing thread after RouterBase.stopped is set to True
         with self.timers_condition:
             self.timers_condition.notify()  # stop wait in _timers thread
-        self.routing_thread.join(4.0)
-        self.timers_thread.join(4.0)
+        self.routing_thread.join(30.0)
+        self.timers_thread.join(30.0)
         RouterBase.stopped.clear()  # all threads terminated, clear flag again to allow for new initialisations
     
     # this dumps internal data structures
@@ -155,7 +155,4 @@ class RouterBase(object):
             logger.debug("got routing command: %s" % command["_command"])
             self._call_command(command)
             self.queue.task_done()
-        logger.debug("routing thread got stop signal, terminating all connections...")
-        for con in self.connections.values():
-            con.terminate()
         logger.debug("routing thread stopped...")
