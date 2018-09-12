@@ -63,7 +63,8 @@ def proxy(name, *args, **kwargs):
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:
-        logger.error("Error calling filter '%s': %s" % (name, str(e)))
+        logger.error("Error calling filter '%s': %s: %s" % (name, str(.__class__.__name__), str(e)))
+        logger.exception(e)
 
 def gui_command_incoming(command):
     return proxy("gui_command_incoming", command)
