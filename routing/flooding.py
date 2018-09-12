@@ -17,7 +17,7 @@ from utils import init_mixins, final
 from .router import Router
 from .active_paths_mixin import ActivePathsMixin
 from .probabilistic_forwarding_mixin import ProbabilisticForwardingMixin
-from cover_groups import CoverTrafficMixin
+from .cover_traffic_mixin import CoverTrafficMixin
 
 
 # this is used to pretty print sortedDict contents

@@ -6,9 +6,10 @@ logger = logging.getLogger(__name__)
 # own classes
 from networking import Message
 from .router import Router
+from .cover_traffic_mixin import CoverTrafficMixin
 
 
-class Randomwalk(Router):
+class Randomwalk(Router, CoverTrafficMixin):
     settings = {
         "INITIAL_TTL": 60,
         "INITIAL_WALKERS": 5,

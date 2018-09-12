@@ -11,7 +11,6 @@ import time
 import control
 import networking
 import routing
-import cover_groups
 import utils
 import filters
 
@@ -54,7 +53,6 @@ def cleanup_and_exit(code=0):
         if router:
             router.stop()
         networking.Connection.shutdown()
-        networking.GroupConnection.shutdown()
         server.stop()
     except KeyboardInterrupt as err:        # subsequent keyboard interrupts trigger fast shutdown (kill mode)
         logger.warning("Got interrupted again, killing myself!!")
@@ -125,16 +123,16 @@ try:
                 # apply settings if present
                 apply_settings(command["settings"], ["networking", "Connection"], networking.Connection)
                 apply_settings(command["settings"], ["routing", "Router"], routing.Router)
-                apply_settings(command["settings"], ["cover_groups", "GroupRouter"], cover_groups.GroupRouter)
+                apply_settings(command["settings"], ["routing", "GroupRouter"], routing.GroupRouter)
                 apply_settings(command["settings"], ["routing", command["router"]], router_class)
                 
-                # initialize networking and router
+                # initialize networking and routers and update filter attributes with routers
                 queue = Queue()
                 group_queue = Queue()
-                networking.Connection.init(node_id, queue, args.listen, 9999, event_queue)
-                networking.GroupConnection.init(node_id, group_queue, args.listen, 9998, event_queue)
+                networking.Connection.init("normal", node_id, queue, args.listen, 9999, event_queue)
+                networking.Connection.init("group", node_id, group_queue, args.listen, 9998, event_queue)
                 router = router_class(node_id, queue)
-                group_router = cover_groups.GroupRouter(node_id, group_queue, router)
+                group_router = routing.GroupRouter(node_id, group_queue, router)
                 filters.update_attributes({"router": router, "group_router": group_router})
             else:
                 fail_command(command, "Cannot start new router '%s': old router still initialized" % str(command["router"]))
@@ -144,7 +142,6 @@ try:
                 router.stop()
                 router = None
                 group_router = None
-            networking.GroupConnection.shutdown()
             networking.Connection.shutdown()
             queue = None
             group_queue = None
@@ -157,12 +154,12 @@ try:
             cleanup_and_exit(0)     # the startup script will restart this node after a few seconds
         elif command["_command"] == "connect":
             if router:  # router and network are initialized at once, if we have no router our network is down, too
-                networking.Connection.connect_to(command["addr"])
+                networking.Connection.connect_to("normal", command["addr"])
             else:
                 fail_command(command, "Cannot connect to peer at %s: network not initialized!" % str(command["addr"]))
         elif command["_command"] == "disconnect":
             if router:  # router and network are initialized at once, if we have no router our network is down, too
-                networking.Connection.disconnect_from(command["addr"])
+                networking.Connection.disconnect_from("normal", command["addr"])
             else:
                 fail_command(command, "Cannot disconnect from peer at %s: network not initialized!" % str(command["addr"]))
         elif command["_command"] == "publish":

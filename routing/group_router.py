@@ -3,9 +3,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 #own classes
-from routing import RouterBase
-from networking import GroupConnection
+from networking import Connection
 from networking import Message
+from .router_base import RouterBase
 
 
 class GroupRouter(RouterBase):
@@ -35,7 +35,11 @@ class GroupRouter(RouterBase):
         self._call_command({"_command": "GroupRouter__create_group", "channel": channel, "ip_list": ip_list, "interval": interval})
     
     def __dump_state(self):
-        return {}
+        return {
+            "outgoing_timers": self.outgoing_timers,
+            "unbound_connections": self.unbound_connections,
+            "groups": self.groups
+        }
     
     def _add_connection_command(self, command):
         con = command["connection"]
@@ -171,6 +175,6 @@ class GroupRouter(RouterBase):
             if ip in self.connections:
                 con = self.connections[ip]      # reuse connections
             else:
-                con = GroupConnection.connect_to(ip)
+                con = Connection.connect_to("group", ip)
             self.unbound_connections[command["channel"]]["connections"].add(con)
         self._init_group(command["channel"])

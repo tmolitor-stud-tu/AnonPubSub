@@ -32,15 +32,24 @@
 			"level": "DEBUG",
 			"handlers": ["stderr", "queue"]
 		},
+		
 		"networking": {
 			"level": "INFO"
 		},
+		"networking.listener": {
+			"level": "DEBUG"
+		},
+		"networking.message": {
+			"level": "DEBUG"
+		},
+		
 		"routing.router_base": {
 			"level": "INFO"
 		},
 		"routing.router": {
 			"level": "INFO"
 		},
+		
 		"cherrypy.access": {
 			"level": "DEBUG",
 			"handlers": ["ignore"],

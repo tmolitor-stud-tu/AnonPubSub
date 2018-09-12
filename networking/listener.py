@@ -9,12 +9,13 @@ from utils import catch_exceptions
 
 class Listener(object):
     
-    def __init__(self, node_id, callback, host, port=9999):
+    def __init__(self, listener_type, node_id, callback, host, port=9999):
+        self.listener_type = listener_type
         self.node_id = node_id
         self.callback = callback
         self.run = True
         
-        logger.debug("initializing listener for node %s on host %s" % (self.node_id, host))
+        logger.debug("Initializing %s listener for node %s on %s" % (self.listener_type, self.node_id, str((host, port))))
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((host, port))
@@ -34,7 +35,7 @@ class Listener(object):
     
     @catch_exceptions(logger=logger)
     def _listener(self):
-        logger.debug("listener thread started")
+        logger.debug("%s listener thread started" % self.listener_type)
         while self.run:
             try:
                 data, addr = self.sock.recvfrom(65536)
@@ -42,5 +43,5 @@ class Listener(object):
                 continue
             except:
                 raise
-            self.callback(addr, data)
-        logger.debug("listener thread stopped")
+            self.callback(self.listener_type, addr, data)
+        logger.debug("%s listener thread stopped" % self.listener_type)

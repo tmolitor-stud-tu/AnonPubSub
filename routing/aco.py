@@ -12,6 +12,7 @@ from utils import init_mixins, final
 from .router import Router
 from .active_paths_mixin import ActivePathsMixin
 from .probabilistic_forwarding_mixin import ProbabilisticForwardingMixin
+from .cover_traffic_mixin import CoverTrafficMixin
 
 
 @final

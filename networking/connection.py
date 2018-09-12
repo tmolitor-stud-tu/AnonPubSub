@@ -31,13 +31,9 @@ import filters
 
 
 class Connection(object):
+    # these are shared between all connection types
     reconnections_stopped = Event()
-    node_id = None
-    router_queue = None
-    listener = None
-    event_queue = None
-    instances_lock = RLock()
-    instances = {}
+    global_lock = RLock()
     len_size = len(struct.pack("!Q", 0))	# calculate length of packed unsigned long long int
     settings = {
         "MAX_COVERT_PAYLOAD": 1200,         # always +94 bytes overhead for ping added to final encrypted packet (+58 bytes for unencrypted packets)
@@ -48,43 +44,72 @@ class Connection(object):
         "PACKET_LOSS": 0,                   # fraction of packet loss to apply to outgoing packets (covert channel AND data channel)
     }
     
+    # these are scoped to connection types
+    instances = {}
+    node_id = {}
+    event_queue = {}
+    router_queue = {}
+    listener = {}
+    port = {}
+    
     # public static method to initialize networking
     @staticmethod
-    def init(node_id, queue, host, port, event_queue=None):
-        Connection.reconnections_stopped.clear()    # clear shutdown flag
-        Connection.node_id = node_id
-        Connection.port = port
-        Connection.router_queue = queue
-        Connection.listener = Listener(Connection.node_id, Connection._incoming_data, host, Connection.port)
-        Connection.event_queue = event_queue
+    def init(connection_type, node_id, queue, host, port, event_queue):
+        logger.warning("Initializing networking (type: %s)..." % connection_type)
+        with Connection.global_lock:
+            Connection.instances[connection_type] = {}
+            Connection.node_id[connection_type] = node_id
+            Connection.event_queue[connection_type] = event_queue 
+            Connection.router_queue[connection_type] = queue
+            Connection.port[connection_type] = port
+            Connection.reconnections_stopped.clear()    # clear shutdown flag (this is shared between all connection types)
+            Connection.listener[connection_type] = Listener(
+                connection_type,
+                Connection.node_id[connection_type],
+                Connection._incoming_data,
+                host,
+                Connection.port[connection_type]
+            )
+    
+    @staticmethod
+    def check_init(connection_type):
+        with Connection.global_lock:
+            if connection_type not in Connection.instances:
+                raise ValueError("Network (type: %s) not initialized, call Connection.init() first!" % connection_type)
     
     # public static factory method for new outgoing instances
     @staticmethod
-    def connect_to(host, reconnect_try=0):
-        return Connection._new((host, Connection.port), True, reconnect_try)
+    def connect_to(connection_type, host, reconnect_try=0):
+        with Connection.global_lock:
+            Connection.check_init(connection_type)
+            return Connection._new(connection_type, (host, Connection.port[connection_type]), True, reconnect_try)
     
     @staticmethod
-    def disconnect_from(host):
-        addr = (host, Connection.port)
-        with Connection.instances_lock:
-            if str(addr) in Connection.instances:
-                Connection.instances[str(addr)].terminate()
+    def disconnect_from(connection_type, host):
+        with Connection.global_lock:
+            Connection.check_init(connection_type)
+            addr = (host, Connection.port[connection_type])
+            if str(addr) in Connection.instances[connection_type]:
+                Connection.instances[connection_type][str(addr)].terminate()
     
     # internal static factory method for incoming packets used by listener class
     @staticmethod
-    def _incoming_data(addr, data):
-        con = Connection._new(addr, False, 0)
+    def _incoming_data(connection_type, addr, data):
+        # ignore incoming data if networking is not initialized
+        with Connection.global_lock:
+            if connection_type not in Connection.instances:
+                return
+        con = Connection._new(connection_type, addr, False, 0)
         con._incoming(data)
     
     # internal static factory method doing the actual work
     @staticmethod
-    def _new(addr, active_init, reconnect_try):
-        if not Connection.listener:
-            raise ValueError("Network not initialized, call Connection.init() first!")
-        with Connection.instances_lock:
-            if str(addr) not in Connection.instances or Connection.instances[str(addr)].is_dead.is_set():
-                Connection.instances[str(addr)] = Connection(addr, active_init, reconnect_try)
-            con = Connection.instances[str(addr)]
+    def _new(connection_type, addr, active_init, reconnect_try):
+        with Connection.global_lock:
+            Connection.check_init(connection_type)
+            if str(addr) not in Connection.instances[connection_type] or Connection.instances[connection_type][str(addr)].is_dead.is_set():
+                Connection.instances[connection_type][str(addr)] = Connection(connection_type, addr, active_init, reconnect_try)
+            con = Connection.instances[connection_type][str(addr)]
         if active_init:
             con.active_init = active_init   # force right value (used on reconnect)
         return con
@@ -92,24 +117,37 @@ class Connection(object):
     # public static method to terminate all connections
     @staticmethod
     def shutdown():
-        logger.warning("Shutting down networking...")
-        # stop listener
-        if Connection.listener:
-            Connection.listener.stop()
+        logger.warning("Shutting down full networking...")
+        # extract list of initialized network types
+        with Connection.global_lock:
+            types = list(Connection.instances.keys())
+        # stop all listeners without holding global_lock (listeners receiving data after this thread aqcuired the lock would otherwise deadlock)
+        for connection_type in types:
+            logger.warning("Stopping listener (type: %s)..." % connection_type)
+            # stop listener (this prevents creation of new connections from incoming packets)
+            Connection.listener[connection_type].stop()
         # stop reconnections from happening
         Connection.reconnections_stopped.set()
-        # terminate all connections (has to be done AFTER stopping the listener so to not create new connections by incoming packets)
-        with Connection.instances_lock:
-            for con in list(Connection.instances.values()):
-                con.terminate()
-        logger.warning("Network shutdown complete...")
-        # cleanup static class attributes
-        Connection.node_id = None
-        Connection.router_queue = None
-        Connection.listener = None
+        # now start real shutdown of all connections while holding global_lock
+        with Connection.global_lock:
+            for connection_type in types:
+                logger.warning("Shutting down networking (type: %s)..." % connection_type)
+                # terminate all connections (has to be done AFTER stopping the listener so to not create new connections by incoming packets)
+                for con in list(Connection.instances[connection_type].values()):
+                    con.terminate()
+                # cleanup static class attributes
+                del Connection.instances[connection_type]
+                del Connection.node_id[connection_type]
+                del Connection.event_queue[connection_type]
+                del Connection.router_queue[connection_type]
+                del Connection.listener[connection_type]
+                del Connection.port[connection_type]
+                logger.warning("Networking shutdown complete (type: %s)..." % connection_type)
+        logger.warning("Full networking shutdown complete...")
         
     # class constructor
-    def __init__(self, addr, active_init, reconnect_try):
+    def __init__(self, connection_type, addr, active_init, reconnect_try):
+        self.connection_type = connection_type
         self.addr = addr
         self.instance_id = str(binascii.hexlify(os.urandom(2)), 'ascii')
         self.logger=configure_logger(self.addr, self.instance_id)
@@ -133,36 +171,34 @@ class Connection(object):
         
         self.logger.info("Initializing new connection with %s (connect #%s)" % (str(self.addr), str(self.reconnect_try)))
         if self.active_init:
-            Connection.event_queue.put({"type": "connecting", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+            Connection.event_queue[self.connection_type].put({"type": "connecting", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
             self._send_init_msg("SYN")
         
         # init watchdog thread to terminate connection after MAX_MISSING_PINGS consecutive failures to receive a ping
-        self.watchdog_thread = Thread(name="local::"+Connection.node_id+"::_watchdog", target=self._watchdog, daemon=True)
+        self.watchdog_thread = Thread(name="local::"+Connection.node_id[self.connection_type]+"::_watchdog", target=self._watchdog, daemon=True)
         self.watchdog_thread.start()
     
     def terminate(self):
-        self.logger.info("Terminating connection...")
+        self.logger.info("Terminating connection (type: %s)..." % self.connection_type)
         if not self.is_dead.is_set():
             self.logger.debug("closing connection...")
             self.is_dead.set()
-            with Connection.instances_lock:
+            with Connection.global_lock:
                 if str(self.addr) in Connection.instances:
                     del Connection.instances[str(self.addr)]
             if self.connection_state == "ESTABLISHED":
-                if Connection.router_queue:
-                    Connection.router_queue.put({
-                        "_command": "remove_connection",
-                        "connection": self
-                    })
+                Connection.router_queue[self.connection_type].put({
+                    "_command": "remove_connection",
+                    "connection": self
+                })
         if self.pinger_thread and self.pinger_thread != current_thread():
             self.pinger_thread.join(4.0)
         if self.watchdog_thread and self.watchdog_thread != current_thread():
             self.watchdog_thread.join(4.0)
         if self.reconnect_thread and self.reconnect_thread != current_thread():
             self.reconnect_thread.join(4.0)
-        self.logger.info("Connection terminated successfully...")
-        if Connection.event_queue:
-            Connection.event_queue.put({"type": "disconnected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+        self.logger.info("Connection (tpye: %s) terminated successfully..." % self.connection_type)
+        Connection.event_queue[self.connection_type].put({"type": "disconnected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
     
     def send_msg(self, msg, call_filters = True):
         if self.connection_state != "ESTABLISHED":                      # not connected
@@ -174,7 +210,6 @@ class Connection(object):
             return      # ignore send on dead connection (will be "garbage collected" by router command "remove_connection" soon)
         data = self._encrypt(self._pack(msg))
         self._raw_send(data)
-
     
     def send_covert_msg(self, msg, call_filters = True):
         if call_filters and filters.covert_msg_outgoing(msg, self):         # call filters framework
@@ -204,7 +239,7 @@ class Connection(object):
         self.logger.debug("sending init message '%s' from state '%s'..." % (str(flag), str(self.connection_state)))
         data = bytearray(flag, 'ascii')
         if flag == "SYN" or flag == "SYN-ACK":      # add key exchange data to SYN and SYN-ACK messages
-            data += bytes(Connection.node_id, 'ascii')
+            data += bytes(Connection.node_id[self.connection_type], 'ascii')
             if Connection.settings["ENCRYPT_PACKETS"]:
                 data += self.X25519_key.public_key().public_bytes()
             else:
@@ -234,11 +269,11 @@ class Connection(object):
         # our connection is now established, inform router of the new connection and activate pinger thread
         self.connection_state = "ESTABLISHED"
         self.reconnect_try = 0  # connection successful, reset reconnection counter
-        self.pinger_thread = Thread(name="local::"+Connection.node_id+"::_pinger", target=self._pinger, daemon=True)
+        self.pinger_thread = Thread(name="local::"+Connection.node_id[self.connection_type]+"::_pinger", target=self._pinger, daemon=True)
         self.pinger_thread.start()
         self.logger.info("Connection with %s initialized" % str(self.addr))
-        Connection.event_queue.put({"type": "connected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
-        Connection.router_queue.put({
+        Connection.event_queue[self.connection_type].put({"type": "connected", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+        Connection.router_queue[self.connection_type].put({
             "_command": "add_connection",
             "connection": self
         })
@@ -249,7 +284,7 @@ class Connection(object):
         self.logger.debug("incoming packet(%s): %s" % (str(len(packet)), str(packet)))
         if not self.connection_state == "ESTABLISHED":  # init phase (unencrypted)
             if self.connection_state == "IDLE" and packet[:3] == b"SYN":
-                Connection.event_queue.put({"type": "connecting", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
+                Connection.event_queue[self.connection_type].put({"type": "connecting", "data": {"addr": str(self.addr[0]), "port": self.addr[1], "active_init": self.active_init}})
                 self.peer_id = packet[3:39].decode("ascii")
                 self._derive_key(packet[39:])
                 self._send_init_msg("SYN-ACK")
@@ -283,7 +318,7 @@ class Connection(object):
                             self.covert_messages_received = covert_msg["_covert_messages_counter"]
                             del covert_msg["_covert_messages_counter"]      # this is only internal, do not expose it to routers or filters
                             if not filters.covert_msg_incoming(covert_msg, self):       # call filters framework
-                                Connection.router_queue.put({"_command": "covert_message_received", "connection": self, "message": covert_msg})
+                                Connection.router_queue[self.connection_type].put({"_command": "covert_message_received", "connection": self, "message": covert_msg})
                     # send out ack
                     ack_msg = Message("_ack", {
                         # covert_messages_counter in network byte order (big endian) coded to hex (this is a constant length string)
@@ -302,7 +337,7 @@ class Connection(object):
                             self.covert_msg_queue.popleft()
                 else:
                     if not filters.msg_incoming(msg, self):     # call filters framework
-                        Connection.router_queue.put({"_command": "message_received", "connection": self, "message": msg})
+                        Connection.router_queue[self.connection_type].put({"_command": "message_received", "connection": self, "message": msg})
     
     # *** internal threads ***
     @catch_exceptions(logger=logger)
@@ -329,7 +364,7 @@ class Connection(object):
                 self.terminate()
                 if self.active_init and self.reconnect_try < Connection.settings["MAX_RECONNECTS"]:
                     if not Connection.reconnections_stopped.is_set():
-                        self.reconnect_thread = Thread(name="local::"+Connection.node_id+"::_reconnect", target=self._reconnect, daemon=True)
+                        self.reconnect_thread = Thread(name="local::"+Connection.node_id[self.connection_type]+"::_reconnect", target=self._reconnect, daemon=True)
                         self.reconnect_thread.start()
                     else:
                         self.logger.info("Reconnections disallowed by shutdown, not trying to reconnect...")
@@ -362,7 +397,7 @@ class Connection(object):
         drop_packet = numpy.random.choice([True, False], p=[Connection.settings["PACKET_LOSS"], 1-Connection.settings["PACKET_LOSS"]], size=1)[0]
         if not drop_packet:
             try:
-                Connection.listener.get_socket().sendto(data, self.addr)
+                Connection.listener[self.connection_type].get_socket().sendto(data, self.addr)
             except Exception as e:
                 self.logger.warning("Could not send packet to '%s', terminating connection! Exception: %s" % (str(self.addr), str(e)))
                 self.terminate()
