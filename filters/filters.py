@@ -10,6 +10,12 @@ class Base(object):
     def __init__(self, logger):
         self.logger = logger
     
+    def gui_command_incoming(self, command):
+        pass
+    def gui_command_completed(self, command, error):
+        pass
+    def gui_event_outgoing(self, event):
+        pass
     def covert_msg_incoming(self, msg, con):
         pass
     def covert_msg_outgoing(self, msg, con):
@@ -49,15 +55,24 @@ def load(code, attributes):
 
 # proxy functions
 
-def proxy(name, msg, con):
+def proxy(name, *args, **kwargs):
     global filters
     try:
         if filters and hasattr(filters, name):
-            return getattr(filters, name)(msg, con)
+            return getattr(filters, name)(*args, **kwargs)
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:
         logger.error("Error calling filter '%s': %s" % (name, str(e)))
+
+def gui_command_incoming(command):
+    return proxy("gui_command_incoming", command)
+
+def gui_command_completed(command, error=False):
+    return proxy("gui_command_completed", command, error)
+
+def gui_event_outgoing(event):
+    return proxy("gui_event_outgoing", event)
 
 def covert_msg_incoming(msg, con):
     return proxy("covert_msg_incoming", msg, con)

@@ -587,7 +587,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 			try {
 				data = JSON.parse(reader.result);
 				//import settings if given and the import is wanted
-				if("settings" in data && window.confirm("Found settings in graph file, import these, too?"))
+				if("graph" in data && "settings" in data.graph && window.confirm("Found settings in graph file, import these, too?"))
 				{
 					var set_value = function(path, value) {
 						$(".grid-settings .global-settings .setting").each(function() {
@@ -609,7 +609,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 								set_value(path.join("."), value);
 						});
 					};
-					traverse_settings([], data["settings"]);
+					traverse_settings([], data.graph["settings"]);
 				}
 				//parse graph data
 				create_overlay(data);
@@ -653,9 +653,14 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 			graph_links.push({"source": id_index_map[source_node.data.id], "target": id_index_map[destination_node.data.id]});
 		});
 		var graph = {
+			"directed": false,
+			"multigraph": false,
 			"nodes": graph_nodes,
 			"links": graph_links,
-			"settings": parse_settings()
+			"graph": {
+				"name": "WebUI Graph ("+graph_nodes.length+", "+graph_links.length+")",
+				"settings": parse_settings()
+			}
 		};
 		downloadString(JSON.stringify(graph, null, 2), "text/json", "graph.json");
 	});

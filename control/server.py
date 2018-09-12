@@ -10,6 +10,9 @@ import json
 import logging
 logger = logging.getLogger(__name__)
 
+# own classes
+import filters
+
 # needed for pretty serialisation
 from networking import Connection
 from utils import catch_exceptions
@@ -98,7 +101,9 @@ class Server(object):
                 try:
                     while True:
                         try:
-                            event = self.event_queue.get(True, 4)        # 4 seconds timeout
+                            event = self.event_queue.get(True, 4)       # 4 seconds timeout
+                            if filters.gui_event_outgoing(event):       # allow gui events to be filtered, too
+                                continue
                             if not event:
                                 logger.debug("Stopping SSE stream...")
                                 break

@@ -114,10 +114,11 @@ class Router(RouterBase):
             if hasattr(self, func):
                 state[child] = getattr(self, func)()
         
-        # output and return collected states
-        logger.info("INTERNAL STATE:\n%s" % str(state))
+        # return collected states
         if command and "callback" in command and command["callback"]:
             command["callback"](state)
+        else:
+            logger.info("INTERNAL STATE:\n%s" % str(state))
     
     # *** internal methods, DON'T touch from child classes ***
     def __outgoing(self, msg_type, msg, con):

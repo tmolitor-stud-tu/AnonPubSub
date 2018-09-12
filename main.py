@@ -79,6 +79,7 @@ def fail_command(command, error):
     global command_failed
     command_failed = True
     if command["_command"][:1] != "_":
+        filters.gui_command_completed(command, error)
         event_queue.put({"type": "command_failed", "data": {"id": command["_id"], "error": error}})
     logger.error(error)
 def subscribe(command, router, received):    
@@ -109,6 +110,8 @@ try:
             #logger.debug("main command queue empty")
             continue
         if command["_command"][:1] != "_":       # don't log internal commands
+            if filters.gui_command_incoming(command):       # allow gui commands to be filtered, too (but only handle external commands)
+                continue
             logger.debug("Got GUI command: %s" % str(command))
         if command["_command"] == "start":
             if not router:
@@ -185,12 +188,13 @@ try:
                 fail_command(command, "Cannot subscribe to channel '%s': no router initialized!" % str(command["channel"]))
         elif command["_command"] == "dump":
             def cb(state):
+                logger.info("INTERNAL STATE:\n%s" % str(state))
                 event_queue.put({"type": "state", "data": state})
             if router:
                 router.dump(cb)
         elif command["_command"] == "load_filters":
             # load filter definitions
-            retval = filters.load(command["code"], {"leds": all_leds, "router": router})
+            retval = filters.load(command["code"], {"leds": all_leds, "router": router, "group_router": group_router})
             if retval:
                 fail_command(command, retval)
         elif command["_command"] == "create_group":
@@ -203,6 +207,7 @@ try:
         else:
             fail_command(command, "Ignoring unknown GUI command: %s" % str(command["_id"]))
         if command["_command"][:1] != "_" and not command_failed:       # don't ack internal or failed commands
+            filters.gui_command_completed(command)
             logger.debug("GUI command completed: %s" % str(command["_id"]))
             event_queue.put({"type": "command_completed", "data": {"id": command["_id"]}})
         command_queue.task_done()

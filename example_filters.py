@@ -17,8 +17,18 @@ class Filters(Base):
         
         # some imports needed later
         self.random = __import__("random")
-        
+    
+    def gui_command_incoming(self, command):
+        pass
+    
+    def gui_command_completed(self, command, error):
+        pass
+    
+    def gui_event_outgoing(event):
+        pass
+    
     def covert_msg_incoming(self, msg, con):
+        #self.logger.info("*********** COVERT INCOMING(%s) connection %s ***********" % (msg.get_type(), con))
         # example to indicate incoming ant
         if msg.get_type() == "ACO_ant":
             # do something meaningful here
@@ -30,6 +40,7 @@ class Filters(Base):
             pass    #logger.error("returning ant coming from peer %s" % con.get_peer_id())
 
     def covert_msg_outgoing(self, msg, con):
+        #self.logger.info("*********** COVERT OUTGOING(%s) connection %s ***********" % (msg.get_type(), con))
         # example to indicate outgoing ant
         if msg.get_type() == "ACO_ant":
             # do something meaningful here

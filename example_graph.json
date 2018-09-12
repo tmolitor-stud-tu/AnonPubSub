@@ -1,4 +1,6 @@
 {
+	"directed": false,
+	"multigraph": false,
 	"nodes":[
 		{"id": "ID: 10", "ip": "127.0.0.10", "roles": {"subscriber": ["test"]}},
 		{"id": "127.0.0.20"},
@@ -13,10 +15,13 @@
 		{"source": 3,"target": 4},
 		{"source": 4,"target": 0}
 	],
-	"settings": {
-		"networking": {
-			"Connection": {
-				"MAX_COVERT_PAYLOAD": 2048
+	"graph": {
+		"name": "example graph",
+		"settings": {
+			"networking": {
+				"Connection": {
+					"MAX_COVERT_PAYLOAD": 2048
+				}
 			}
 		}
 	}
