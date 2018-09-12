@@ -116,7 +116,7 @@ class Connection(object):
     
     # public static method to terminate all connections
     @staticmethod
-    def shutdown(type_to_shutdown):
+    def shutdown(type_to_shutdown=None):
         logger.warning("Shutting down full networking (types: %s)..." % type_to_shutdown if type_to_shutdown else "all")
         # extract list of initialized network types
         with Connection.global_lock:
