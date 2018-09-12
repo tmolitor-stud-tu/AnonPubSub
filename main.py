@@ -82,14 +82,13 @@ def fail_command(command, error):
         event_queue.put({"type": "command_failed", "data": {"id": command["_id"], "error": error}})
     logger.error(error)
 def subscribe(command, router, received):    
-    if command["channel"] not in received:
-        received[command["channel"]] = 0
-        def dummy_receiver(data):
-            event_queue.put({"type": "data", "data": {"received": data, "expected": received[command["channel"]] + 1}})
-            if data != received[command["channel"]] + 1:
-                logger.warning("UNEXPECTED DATA RECEIVED (%s != %s)!!!" % (str(data), str(received[command["channel"]] + 1)))
-            received[command["channel"]] = data
-        router.subscribe(command["channel"], dummy_receiver)
+    received[command["channel"]] = 0
+    def dummy_receiver(data):
+        event_queue.put({"type": "data", "data": {"received": data, "expected": received[command["channel"]] + 1}})
+        if data != received[command["channel"]] + 1:
+            logger.warning("UNEXPECTED DATA RECEIVED (%s != %s)!!!" % (str(data), str(received[command["channel"]] + 1)))
+        received[command["channel"]] = data
+    router.subscribe(command["channel"], dummy_receiver)
 try:
     while True:
         # periodically publish a simple counter on all configured channels (about every second or every incoming command (whichever comes first))

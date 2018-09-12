@@ -629,6 +629,11 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
                 "subscriber": self.subscriber_ids[command["channel"]]
             }))
             
+            # stop subscription timers for this channel
+            for chain in self.subscription_timers[command["channel"]]:
+                self._abort_timer(self.subscription_timers[command["channel"]][chain])
+                del self.subscription_timers[command["channel"]][chain]
+                
             # remove old subscriber id if not needed anymore
             if command["channel"] in self.subscriber_ids:
                 del self.subscriber_ids[command["channel"]]

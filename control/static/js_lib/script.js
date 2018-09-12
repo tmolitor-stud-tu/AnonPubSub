@@ -1052,6 +1052,8 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 	$(document).on("aps.backend.open", function(event, node, data) {
 		append_to_log(node, $("<span>").addClass("ok").text((new Date().toLocaleString())+" SSE connection to '"+node.data.ip+"' established!").append($("<br>")));
 		node.data.obj.find(".overlay").hide();
+		node.data.settings.find(".actions .stop").click();
+		load_filters(true);		// (re)load filters (could be lost after resetting nodes)
 	});
 	$(document).on("aps.backend.error", function(event, node, data) {
 		append_to_log(node, $("<span>").addClass("error").text((new Date().toLocaleString())+" SSE connection to '"+node.data.ip+"' failed, retrying!").append($("<br>")));

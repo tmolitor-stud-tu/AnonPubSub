@@ -349,7 +349,7 @@ class Connection(object):
         )
         self.logger.info("Reconnecting in %.3f seconds..." % reconnect)
         if not Connection.reconnections_stopped.wait(reconnect):
-            Connection.connect_to(self.addr[0], self.reconnect_try+1)
+            Connection.connect_to(self.connection_type, self.addr[0], self.reconnect_try+1)
         else:
             self.logger.info("Reconnection cancelled...")
     

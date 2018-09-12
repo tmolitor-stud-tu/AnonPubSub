@@ -377,6 +377,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         # we are (re)creating the overlay from scratch, abort maintenance timer
         if command["channel"] in self.overlay_maintenance_timers:
             self._abort_timer(self.overlay_maintenance_timers[command["channel"]])
+            del self.overlay_maintenance_timers[command["channel"]]
         
         active_edges_present = self._ActivePathsMixin__active_edges_present(command["channel"], self.subscriber_ids[command["channel"]])
         
