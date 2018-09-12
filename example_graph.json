@@ -1,5 +1,5 @@
 {
-  "nodes":[
+	"nodes":[
 		{"id": "ID: 10", "ip": "127.0.0.10", "roles": {"subscriber": ["test"]}},
 		{"id": "127.0.0.20"},
 		{"id": "127.0.0.30", "roles": {"publisher": ["test"]}},

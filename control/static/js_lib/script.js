@@ -215,7 +215,8 @@ var create_overlay = function(data) {
 	if(!data.nodes || !data.links)
 		throw "Unknown file format: No nodes or links found!";
 	var graph = new Springy.Graph();
-	var layout = new Springy.Layout.ForceDirected(graph, 400.0, 800.0, 0.5, 0.25);
+	//wolfram alpha solution for "exponential fit {{5, 800}, {25, 100}, {10, 400}, {15, 200},{30,20}}"
+	var layout = new Springy.Layout.ForceDirected(graph, 200.0, 1542.81 * Math.exp(-0.132625 * data.nodes.length), 0.5, 0.25);
 	//only change bounding box while rendering and use a fixed one when drag/drop is enabled
 	//this prevents node from jumping when the window or log area is resized
 	var currentBB = {bottomleft: new Springy.Vector(-2, -2), topright: new Springy.Vector(2, 2)};//layout.getBoundingBox();
@@ -471,6 +472,9 @@ var create_overlay = function(data) {
 		});
 		//start actual rendering (done only once when the json graph file is loaded)
 		renderer.start();
+		window.setTimeout(function() {
+			renderer.stop();
+		}, 15000);
 	})();
 	
 	//stop each node and initializing sse
@@ -764,6 +768,9 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 	});
 	$("#relayout").click(function() {
 		renderer.start();
+		window.setTimeout(function() {
+			renderer.stop();
+		}, 15000);
 	});
 	$("#reset").click(function() {
 		if(confirm("Do you really want to reset all nodes?"))
@@ -1101,7 +1108,7 @@ window.less.pageLoadFinished.then(function() { $(document).ready(function() {	//
 		node.data.obj.prop("title", data.node_id);
 	});
 	$(document).on("aps.backend.led", function(event, node, data) {
-		update_led(node, data.led_id, data.color);
+		update_led(node, data.led_id, data.color, data.title);
 	});
 	$(document).on("aps.backend.data", function(event, node, data) {
 		var html = $("<span>"+data.received+" <small>("+data.expected+")</small> <span>");
