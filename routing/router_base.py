@@ -8,6 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # own classes
+import filters
 from utils import catch_exceptions
 from networking import Message
 
