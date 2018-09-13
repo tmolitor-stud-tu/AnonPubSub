@@ -162,6 +162,15 @@ def evaluate(graph_args, nodes, base_ip, publishers, subscribers, router, settin
     return evaluation
 
 def update_settings(settings, setting, value):
+    # multi var version
+    if isinstance(setting, list):
+        assert len(s) != len(value)
+        c = 0
+        for s in setting:
+            update_settings(s, value[c])
+            c += 1
+        return
+    # single var version
     setting = str(setting).split(".")
     last_entry = setting[len(setting)-1]
     setting = setting[:-1]
@@ -194,7 +203,7 @@ for task_name, task in tasks.items():
     
     # interprete iterator if given
     iterator = ["default_iterator"]       # dummy iterator having only one entry
-    if task["iterate"]:
+    if "iterate" in task and task["iterate"]:
         loc = {}
         exec("iterator = %s" % task["iterate"]["iterator"], {"numpy": numpy, "random": random}, loc)
         iterator = loc["iterator"]
@@ -203,8 +212,8 @@ for task_name, task in tasks.items():
     # use iterator to evaluate task["rounds"] networks and get the average of every expression defined in task["output"]
     iterator_counter = 0
     for iterator_value in iterator:
-        if task["iterate"]:
-            print("Iterating over %s: %s --> %s" % (task["iterate"]["setting"], str(iterator), str(iterator_value)), file=sys.stderr)
+        if "iterate" in task and task["iterate"]:
+            print("Iterating over %s: %s --> %s" % (str(task["iterate"]["setting"]), str(iterator), str(iterator_value)), file=sys.stderr)
             update_settings(settings, task["iterate"]["setting"], iterator_value)
         # collect evaluation outcome for this task iteration averaged over task["rounds"]
         output = {}
@@ -220,7 +229,7 @@ for task_name, task in tasks.items():
                 settings,
                 float(task["runtime"])
             )
-            os.rename("logs", "logs.%s%s.r%d" % (task_name, (".i%d" % iterator_counter if task["iterate"] else ""), round_num))
+            os.rename("logs", "logs.%s%s.r%d" % (task_name, (".i%d" % iterator_counter if "iterate" in task and task["iterate"] else ""), round_num))
             for var, code in task["output"].items():
                 if var not in output:
                     output[var] = []
