@@ -326,8 +326,7 @@ class Connection(object):
                         if covert_msg["_covert_messages_counter"] == self.covert_messages_received + 1:
                             self.covert_messages_received = covert_msg["_covert_messages_counter"]
                             del covert_msg["_covert_messages_counter"]      # this is only internal, do not expose it to routers or filters
-                            if not filters.covert_msg_incoming(covert_msg, self):       # call filters framework
-                                Connection.router_queue[self.connection_type].put({"_command": "covert_message_received", "connection": self, "message": covert_msg})
+                            Connection.router_queue[self.connection_type].put({"_command": "covert_message_received", "connection": self, "message": covert_msg})
                     # send out ack
                     ack_msg = Message("_ack", {
                         # covert_messages_counter in network byte order (big endian) coded to hex (this is a constant length string)
@@ -345,8 +344,7 @@ class Connection(object):
                         self._unpack(base64.b64decode(bytes(self.covert_msg_queue[0], "ascii")), False)[0]["_covert_messages_counter"] <= msg["covert_messages_counter"]):
                             self.covert_msg_queue.popleft()
                 else:
-                    if not filters.msg_incoming(msg, self):     # call filters framework
-                        Connection.router_queue[self.connection_type].put({"_command": "message_received", "connection": self, "message": msg})
+                    Connection.router_queue[self.connection_type].put({"_command": "message_received", "connection": self, "message": msg})
     
     # *** internal threads ***
     @catch_exceptions(logger=logger)

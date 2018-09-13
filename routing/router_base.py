@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 # own classes
 from utils import catch_exceptions
-import filters
 from networking import Message
 
 
@@ -84,11 +83,13 @@ class RouterBase(object):
     # *** special command methods that should NOT be overwritten by child classes ***
     def _covert_message_received_command(self, command):
         # covert messages and uncovert messages are handled the same (only one part of the called method name differs)
-        return self.__route("covert_data", command["message"], command["connection"])
+        if not filters.covert_msg_incoming(command["message"], command["connection"]):      # call filters framework
+            return self.__route("covert_data", command["message"], command["connection"])
     
     def _message_received_command(self, command):
         # covert messages and uncovert messages are handled the same (only one part of the called method name differs)
-        return self.__route("data", command["message"], command["connection"])
+        if not filters.msg_incoming(command["message"], command["connection"]):             # call filters framework
+            return self.__route("data", command["message"], command["connection"])
     
     # *** internal methods, DON'T touch from child classes ***
     def __real_add_timer(self, timeout, command):
@@ -115,7 +116,7 @@ class RouterBase(object):
     def _timers(self):
         logger.debug("timers thread started...");
         while not RouterBase.stopped.isSet():
-            # wait for nex timer or for 60 seconds if no timer is currently present
+            # wait for next timer or for 60 seconds if no timer is currently present
             with self.timers_condition:
                 if len(self.timers):
                     logger.debug("next timer event in %s seconds" % str(self.timers[0]["timeout"] - datetime.now().timestamp()))
