@@ -519,14 +519,6 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         self._init_channel(command["channel"])
         if command["channel"] not in self.publishing:
             self.publishing.add(command["channel"])
-            if not len(self.advertisement_routing_table[command["channel"]]):
-                if command["channel"] not in self.become_master_timers:     # only start timer once
-                    delay = SystemRandom().uniform(Flooding.settings["MIN_BECOME_MASTER_DELAY"], Flooding.settings["MAX_BECOME_MASTER_DELAY"])
-                    logger.info("Trying to become master publisher in %.3f seconds..." % delay)
-                    self.become_master_timers[command["channel"]] = self._add_timer(delay, {
-                        "_command": "Flooding__become_master",
-                        "channel": command["channel"],
-                    })
         
         # start sending out data
         if self.master[command["channel"]]:
