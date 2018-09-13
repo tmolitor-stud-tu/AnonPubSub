@@ -36,4 +36,9 @@ if [ "$1" == "evaluate" ]; then
 	exit 0
 fi
 
+if [ "$1" == "cleanup" ]; then
+	rm -r "$2"* 2>/dev/null
+fi
+
+echo $@
 exit 0

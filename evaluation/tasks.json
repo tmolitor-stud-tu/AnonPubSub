@@ -36,7 +36,7 @@
 				"SUBSCRIBE_DELAY": 2.0,
 				"AGGRESSIVE_TEARDOWN": false,
 				"AGGRESSIVE_RESUBSCRIBE": false,
-				"MIN_BECOME_MASTER_DELAY": 2,
+				"MIN_BECOME_MASTER_DELAY": 4,
 				"MAX_BECOME_MASTER_DELAY": 10,
 				"PROBABILISTIC_FORWARDING_FRACTION": 0,
 				"AGGRESSIVE_REFLOODING": false
@@ -54,21 +54,60 @@
 		}
 	},
 	"tasks": {
-		"flooding_suboptimal_paths": {
+		"local_test": {
+			"base_ip": "127.0.0.100",
 			"nodes": 25,
 			"graph_args": {"avgdegree": 4},
 			"publishers": 2,
 			"subscribers": 8,
 			"rounds": 2,
-			"runtime": 60,
+			"runtime": 30,
 			"router": "Flooding",
 			"settings": {
 			},
 			"iterate": {
 				"setting": "routing.Flooding.SUBSCRIBE_DELAY",
-				"iterator": "numpy.linspace(0, 2, 5)"
+				"iterator": "numpy.linspace(0, 4, 5)"
 			},
 			"output": {
+				"shorter_subscribers": "evaluation.shorter_subscribers",
+				"shorter_intermediates": "evaluation.shorter_intermediates"
+			}
+		},
+		"flooding_suboptimal_paths": {
+			"base_ip": "127.0.0.100",
+			"nodes": 100,
+			"graph_args": {"avgdegree": 4},
+			"publishers": 5,
+			"subscribers": 10,
+			"rounds": 15,
+			"runtime": 45,
+			"router": "Flooding",
+			"iterate": {
+				"setting": "routing.Flooding.SUBSCRIBE_DELAY",
+				"iterator": "numpy.linspace(0, 2, 5)"
+			},
+			"commented_output": {
+				"shorter_subscribers": "evaluation.shorter_subscribers",
+				"shorter_intermediates": "evaluation.shorter_intermediates"
+			}
+		},
+		"flooding_master_count": {
+			"nodes": 100,
+			"graph_args": {"avgdegree": 4},
+			"publishers": 5,
+			"subscribers": 10,
+			"rounds": 15,
+			"runtime": 35,
+			"router": "Flooding",
+			"settings": {
+				"MIN_BECOME_MASTER_DELAY": 4.0
+			},
+			"iterate": {
+				"setting": "routing.Flooding.MAX_BECOME_MASTER_DELAY",
+				"iterator": "range(10.0, 20.0, 1.0)"
+			},
+			"commented_output": {
 				"shorter_subscribers": "evaluation.shorter_subscribers",
 				"shorter_intermediates": "evaluation.shorter_intermediates"
 			}

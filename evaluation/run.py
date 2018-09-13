@@ -70,9 +70,10 @@ def send_command(ip, command, data=None):
     print("\t\tSending command '%s' to '%s'..." % (command, ip))
     return post_data("http://"+ip+":9980/command", bytes(json.dumps(data), "UTF-8"))
 
-def evaluate(graph_args, nodes, publishers, subscribers, router, settings, runtime):
-    # generate randomly connected graph and add ip addresses and roles as configured
+# generate randomly connected graph and add ip addresses and roles as configured
+def evaluate(graph_args, nodes, base_ip, publishers, subscribers, router, settings, runtime):
     print("\tCreating graph with %d nodes (%d publishers and %d subscribers)..." % (nodes, publishers, subscribers), file=sys.stderr)
+    base_ip = str(base_ip).split(".")
     G = genGraph("random", nodes, **graph_args)
     pubs, subs = publishers, subscribers
     for n in G.nodes():
@@ -83,7 +84,7 @@ def evaluate(graph_args, nodes, publishers, subscribers, router, settings, runti
         elif pubs:
             roles["publisher"] = ["test"]
             pubs = pubs - 1
-        G.node[n] = {"ip": "%d.%d.%d.%d" % (base_ip[0], base_ip[1], base_ip[2], (base_ip[3]+n)), "roles": roles}    
+        G.node[n] = {"ip": "%d.%d.%d.%d" % (int(base_ip[0]), int(base_ip[1]), int(base_ip[2]), (int(base_ip[3])+n)), "roles": roles}    
         nx.relabel_nodes(G, {n: "ID: %d" % n}, False)
 
     # start nodes
@@ -117,7 +118,6 @@ def evaluate(graph_args, nodes, publishers, subscribers, router, settings, runti
             sys.exit(1)
         print("\t\tNode '%s' (%s) is online..." % (n, ip))
         send_command(ip, "stop")
-    time.sleep(4)
 
     print("\tConfiguring filters...", file=sys.stderr)
     with open("filters.py", "r") as f:
@@ -128,15 +128,15 @@ def evaluate(graph_args, nodes, publishers, subscribers, router, settings, runti
     print("\tStarting routers...", file=sys.stderr)
     for n in sorted(list(G.nodes())):
         send_command(G.node[n]["ip"], "start", {"router": router, "settings": settings})
-    time.sleep(4)
+    time.sleep(1)
 
     print("\tConfiguring router connections...", file=sys.stderr)
     for n in sorted(list(G.nodes())):
         for neighbor in G[n]:
             send_command(G.node[n]["ip"], "connect", {"addr": G.node[neighbor]["ip"]})
-    time.sleep(4)
+    time.sleep(2)
 
-    print("\tConfiguring router roles...", file=sys.stderr)
+    print("\tConfiguring router roles (%d publishers, %d subscribers)..." % (publishers, subscribers), file=sys.stderr)
     role_to_command = {"subscriber": "subscribe", "publisher": "publish"}
     for n in sorted(list(G.nodes())):
         for roletype, channellist in G.node[n]["roles"].items():
@@ -146,12 +146,13 @@ def evaluate(graph_args, nodes, publishers, subscribers, router, settings, runti
     print("\tWaiting %.3f seconds for routers doing their work..." % runtime, file=sys.stderr)
     time.sleep(runtime)
 
-    print("\tStopping routers...", file=sys.stderr)
+    print("\tStopping routers and killing nodes...", file=sys.stderr)
     for n in sorted(list(G.nodes())):
         send_command(G.node[n]["ip"], "stop")
     subprocess.call(["./helpers.sh", "stop"])
 
     # evaluate log output
+    print("\tParsing log output...", file=sys.stderr)
     subprocess.call(["./helpers.sh", "evaluate"])
     with open("logs/evaluation.py", "r") as f:
         evaluation = {}
@@ -179,7 +180,11 @@ with open("tasks.json", "r") as f:
 # execute evaluation tasks
 all_results = {}
 for task_name, task in tasks.items():
+    if "output" not in task or not len(task["output"]):
+        print("Ignoring task '%s' (no output defined)..." % task_name, file=sys.stderr)
+        continue
     print("Executing task '%s'..." % task_name, file=sys.stderr)
+    subprocess.call("./helpers.sh cleanup logs.%s" % task_name, shell=True)
     all_results[task_name] = {}
     settings = {}
     settings.update(global_settings)
@@ -199,7 +204,7 @@ for task_name, task in tasks.items():
     iterator_counter = 0
     for iterator_value in iterator:
         if task["iterate"]:
-            print("Iterating over %s: %s --> %s" % (task["iterate"]["setting"], str(iterator_value), str(iterator)), file=sys.stderr)
+            print("Iterating over %s: %s --> %s" % (task["iterate"]["setting"], str(iterator), str(iterator_value)), file=sys.stderr)
             update_settings(settings, task["iterate"]["setting"], iterator_value)
         # collect evaluation outcome for this task iteration averaged over task["rounds"]
         output = {}
@@ -207,12 +212,13 @@ for task_name, task in tasks.items():
             print("Beginning evaluation round %d..." % round_num, file=sys.stderr)
             evaluation = evaluate(
                 task["graph_args"],
-                task["nodes"],
-                task["publishers"],
-                task["subscribers"],
+                int(task["nodes"]),
+                task["base_ip"],
+                int(task["publishers"]),
+                int(task["subscribers"]),
                 task["router"],
                 settings,
-                task["runtime"]
+                float(task["runtime"])
             )
             os.rename("logs", "logs.%s%s.r%d" % (task_name, (".i%d" % iterator_counter if task["iterate"] else ""), round_num))
             for var, code in task["output"].items():
@@ -226,13 +232,13 @@ for task_name, task in tasks.items():
         all_results[task_name][iterator_value] = output
         iterator_counter += 1
         
-        print("Writing partial results...", file=sys.stderr)
+        print("Writing partial evaluation results...", file=sys.stderr)
         with open("results.json", "w") as f:
             json.dump(all_results, f, sort_keys=True, indent=4)
 
-print("Writing results...", file=sys.stderr)
+print("Writing evaluation results...", file=sys.stderr)
 with open("results.json", "w") as f:
-    json.dump(all_results, f)
+    json.dump(all_results, f, sort_keys=True, indent=4)
 
-print("Exiting...", file=sys.stderr)
+print("All done", file=sys.stderr)
 sys.exit(0)
