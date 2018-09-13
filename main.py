@@ -216,5 +216,5 @@ except KeyboardInterrupt as err:
     cleanup_and_exit(0)    
 except Exception as err:
     logger.exception(err)
-    logger.error("Shutting down immediately due to exceptionin main thread!")
+    logger.error("Shutting down immediately due to exception in main thread!")
     cleanup_and_exit(1)     # indicate unclean shutdown

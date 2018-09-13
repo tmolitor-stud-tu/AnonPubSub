@@ -220,8 +220,9 @@ class ActivePathsMixin(object):
         # if a new active path was created, the reverse active edge pointing to the old next hop was replaced by the new one
         # the search fot the old edge (incoming_peer) will thus fail
         # edge versions are not relevant here
-        if not incoming_peer in set(itemgetter("peer")(entry) for entry in
-            self.__reverse_edges[error["channel"]][error["subscriber"]].values()):
+        if (error["subscriber"] not in self.__reverse_edges[error["channel"]] or
+        not incoming_peer in set(itemgetter("peer")(entry) for entry in
+        self.__reverse_edges[error["channel"]][error["subscriber"]].values())):
             logger.info("Not routing error further, incoming_peer is not a reverse active edge...")
             return
             
