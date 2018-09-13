@@ -19,12 +19,20 @@ class Filters(Base):
         self.random = __import__("random")
     
     def gui_command_incoming(self, command):
-        pass
+        if command["_command"] == "start":
+            pass    #self.logger.info("*********** STARTING")
     
     def gui_command_completed(self, command, error):
-        pass
+        if command["_command"] == "start":
+            if not error:
+                pass    #self.logger.info("*********** STARTED")
+            else:
+                pass    #self.logger.info("*********** ERROR STARTING ROUTER: %s" % str(error))
     
     def gui_event_outgoing(event):
+        pass
+    
+    def router_command_incoming(self, command, router):
         pass
     
     def covert_msg_incoming(self, msg, con):

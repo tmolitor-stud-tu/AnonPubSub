@@ -16,6 +16,8 @@ class Base(object):
         pass
     def gui_event_outgoing(self, event):
         pass
+    def router_command_incoming(self, command, router):
+        pass
     def covert_msg_incoming(self, msg, con):
         pass
     def covert_msg_outgoing(self, msg, con):
@@ -74,6 +76,9 @@ def gui_command_completed(command, error=False):
 
 def gui_event_outgoing(event):
     return proxy("gui_event_outgoing", event)
+
+def router_command_incoming(command, router):
+    return proxy("router_command_incoming", command, router)
 
 def covert_msg_incoming(msg, con):
     return proxy("covert_msg_incoming", msg, con)

@@ -148,11 +148,13 @@ class RouterBase(object):
         logger.debug("routing thread started...");
         while not RouterBase.stopped.isSet():
             try:
-                command = self.queue.get(True, 60)      # 60 seconds timeout
+                command = self.queue.get(True, 60)          # 60 seconds timeout
                 if RouterBase.stopped.isSet():              # don't process anything here if we are stopped
                     break
             except Empty as err:
                 logger.debug("routing queue empty")
+                continue
+            if filters.router_command_incoming(command, self):      # allow router commands to be filtered, too
                 continue
             logger.debug("got routing command: %s" % command["_command"])
             self._call_command(command)
