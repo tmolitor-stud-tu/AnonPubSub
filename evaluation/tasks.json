@@ -1,0 +1,77 @@
+{
+	"settings": {
+		"networking": {
+			"Connection": {
+			"MAX_COVERT_PAYLOAD": 2048,
+			"PING_INTERVAL": 0.1,
+			"MAX_MISSING_PINGS": 20,
+			"MAX_RECONNECTS": 3,
+			"PACKET_LOSS": 0,
+			"ENCRYPT_PACKETS": false
+			}
+		},
+		"routing": {
+			"Router": {
+				"OUTGOING_TIME": 0.02,
+				"TIMING_FACTOR": 1
+			},
+			"ACO": {
+				"ANONYMOUS_IDS": false,
+				"ANT_COUNT": 5,
+				"EVAPORATION_TIME": 5,
+				"EVAPORATION_FACTOR": 0.75,
+				"DEFAULT_ROUNDS": 15,
+				"ACTIVATION_ROUNDS": 5,
+				"ACTIVATING_ANTS": 2,
+				"ANT_ROUND_TIME": 5,
+				"ANT_MAINTENANCE_TIME": 0,
+				"AGGRESSIVE_TEARDOWN": false,
+				"PROBABILISTIC_FORWARDING_FRACTION": 0
+			},
+			"Flooding": {
+				"ANONYMOUS_IDS": false,
+				"MAX_HASHES": 1000,
+				"REFLOOD_DELAY": 2,
+				"RANDOM_MASTER_PUBLISH": false,
+				"SUBSCRIBE_DELAY": 2.0,
+				"AGGRESSIVE_TEARDOWN": false,
+				"AGGRESSIVE_RESUBSCRIBE": false,
+				"MIN_BECOME_MASTER_DELAY": 2,
+				"MAX_BECOME_MASTER_DELAY": 10,
+				"PROBABILISTIC_FORWARDING_FRACTION": 0,
+				"AGGRESSIVE_REFLOODING": false
+			},
+			"Randomwalk": {
+				"INITIAL_TTL": 60,
+				"INITIAL_WALKERS": 5,
+				"PROBABILISTIC_FORWARDING_FRACTION": 0
+			},
+			"Gossiping": {
+				"INITIAL_TTL": 60,
+				"GOSSIPING_PEERS": 2,
+				"PROBABILISTIC_FORWARDING_FRACTION": 0
+			}
+		}
+	},
+	"tasks": {
+		"flooding_suboptimal_paths": {
+			"nodes": 25,
+			"graph_args": {"avgdegree": 4},
+			"publishers": 2,
+			"subscribers": 8,
+			"rounds": 2,
+			"runtime": 60,
+			"router": "Flooding",
+			"settings": {
+			},
+			"iterate": {
+				"setting": "routing.Flooding.SUBSCRIBE_DELAY",
+				"iterator": "numpy.linspace(0, 2, 5)"
+			},
+			"output": {
+				"shorter_subscribers": "evaluation.shorter_subscribers",
+				"shorter_intermediates": "evaluation.shorter_intermediates"
+			}
+		}
+	}
+}
