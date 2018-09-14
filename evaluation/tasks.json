@@ -2,7 +2,7 @@
 	"settings": {
 		"networking": {
 			"Connection": {
-			"MAX_COVERT_PAYLOAD": 2048,
+			"MAX_COVERT_PAYLOAD": 4096,
 			"PING_INTERVAL": 0.1,
 			"MAX_MISSING_PINGS": 20,
 			"MAX_RECONNECTS": 3,
@@ -53,51 +53,39 @@
 			}
 		}
 	},
+	"task_defaults": {
+		"base_ip": "127.0.0.100",
+		"nodes": 100,
+		"graph_args": {"avgdegree": 4},
+		"publishers": 5,
+		"subscribers": 10,
+		"rounds": 15
+	},
 	"tasks": {
-		"local_test": {
-			"base_ip": "127.0.0.100",
-			"nodes": 25,
-			"graph_args": {"avgdegree": 4},
-			"publishers": 2,
-			"subscribers": 8,
-			"rounds": 2,
-			"runtime": 30,
-			"router": "Flooding",
-			"settings": {
-			},
-			"iterate": {
-				"setting": "routing.Flooding.SUBSCRIBE_DELAY",
-				"iterator": "numpy.linspace(0, 4, 5)"
-			},
-			"output": {
-				"shorter_subscribers": "evaluation.shorter_subscribers",
-				"shorter_intermediates": "evaluation.shorter_intermediates"
-			}
-		},
 		"flooding_suboptimal_paths": {
-			"base_ip": "127.0.0.100",
-			"nodes": 100,
-			"graph_args": {"avgdegree": 4},
-			"publishers": 5,
-			"subscribers": 10,
-			"rounds": 15,
 			"runtime": 45,
 			"router": "Flooding",
 			"iterate": {
 				"setting": "routing.Flooding.SUBSCRIBE_DELAY",
-				"iterator": "numpy.linspace(0, 2, 5)"
+				"iterator": "numpy.linspace(0, 5, 11)"
 			},
-			"commented_output": {
+			//initialize raw evaluation values
+			"init": {
+				"shorter_subscribers": 0,
+				"shorter_intermediates": 0
+			},
+			//collect raw evaluation values
+			"output": {
 				"shorter_subscribers": "evaluation.shorter_subscribers",
 				"shorter_intermediates": "evaluation.shorter_intermediates"
+			},
+			//use this reduction function to accumulate values of all rounds into one (every var can have its own reduction function)
+			"reduce": {
+				"shorter_subscribers": "numpy.mean",
+				"shorter_intermediates": "numpy.mean"
 			}
 		},
 		"flooding_master_count": {
-			"nodes": 100,
-			"graph_args": {"avgdegree": 4},
-			"publishers": 5,
-			"subscribers": 10,
-			"rounds": 15,
 			"runtime": 35,
 			"router": "Flooding",
 			"settings": {
@@ -105,11 +93,81 @@
 			},
 			"iterate": {
 				"setting": "routing.Flooding.MAX_BECOME_MASTER_DELAY",
-				"iterator": "range(10.0, 20.0, 1.0)"
+				"iterator": "numpy.linspace(10.0, 20.0, 1.0)"
 			},
-			"commented_output": {
-				"shorter_subscribers": "evaluation.shorter_subscribers",
-				"shorter_intermediates": "evaluation.shorter_intermediates"
+			"init": {
+				"master_publishers": 0
+			},
+			"output": {
+				"master_publishers": "evaluation.master_publishers",
+				"slave_publishers": "task[\"publishers\"] - evaluation.master_publishers"
+			},
+			"reduce": {
+				"master_publishers": "numpy.mean",
+				"slave_publishers": "numpy.mean"
+			}
+		},
+		"flooding_overlay_construction": {
+			"runtime": 35,
+			"router": "Flooding",
+			"settings": {
+				"MIN_BECOME_MASTER_DELAY": 2.0,
+				"MAX_BECOME_MASTER_DELAY": 15.0,
+			},
+			"init": {
+				"overlay_construction": [],
+			},
+			"output": {
+				"overlay_construction_min": "min(evaluation.overlay_construction)",
+				"overlay_construction_max": "max(evaluation.overlay_construction)",
+				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction)"
+			},
+			"reduce": {
+				"overlay_construction_min": "numpy.mean",
+				"overlay_construction_max": "numpy.mean",
+				"overlay_construction_avg": "numpy.mean"
+			}
+		},
+		"aco_overlay_construction": {
+			"runtime": 100,
+			"router": "ACO",
+			"iterate": {
+				"setting": ["routing.ACO.ANT_ROUND_TIME", "routing.ACO.EVAPORATION_TIME"],
+				"iterator": "[(x, x) for x in numpy.linspace(1.0, 8.0, 8.0)]"
+			},
+			"init": {
+				"overlay_construction": [],
+			},
+			"output": {
+				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
+				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
+				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)"
+			},
+			"reduce": {
+				"overlay_construction_min": "numpy.mean",
+				"overlay_construction_max": "numpy.mean",
+				"overlay_construction_avg": "numpy.mean"
+			}
+		},
+		"aco_overlay_construction_bandwidth": {
+			"runtime": 100,
+			"router": "ACO",
+			"iterate": {
+				"setting": "networking.MAX_COVERT_PAYLOAD",
+				"iterator": "[1024, 2048, 4096, 8192, 16368, 32768, 65536]"
+			},
+			"init": {
+				"overlay_construction": [],
+			},
+			"output": {
+				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
+				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
+				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)"
+			},
+			"reduce": {
+				"overlay_construction_min": "numpy.mean",
+				"overlay_construction_max": "numpy.mean",
+				"overlay_construction_avg": "numpy.mean"
 			}
 		}
 	}

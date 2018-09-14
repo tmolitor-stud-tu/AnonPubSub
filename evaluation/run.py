@@ -102,7 +102,7 @@ def extract_data(task, standard_imports):
             try:
                 exec(code, {}.update(standard_imports), evaluation)
             except BaseException as e:
-                logger.info("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), code))
+                logger.error("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), code))
                 raise
     return Struct(evaluation)
 
@@ -132,7 +132,7 @@ def evaluate(task, settings, standard_imports):
     # start nodes (cleanup on sigint (CTRL-C) while nodes are running)
     def sigint_handler(sig, frame):
         signal.signal(signal.SIGINT, signal.SIG_IGN) # ignore SIGINT while shutting down
-        logger.info("Got interrupted, killing nodes!")
+        logger.warning("Got interrupted, killing nodes!")
         subprocess.call(["./helpers.sh", "stop"])
         sys.exit(0)
     signal.signal(signal.SIGINT, sigint_handler)
@@ -282,7 +282,7 @@ for task_name, _task in tasks.items():
         try:
             exec("iterator = %s" % task["iterate"]["iterator"], {}.update(standard_imports), loc)
         except BaseException as e:
-            logger.info("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "iterator = %s" % task["iterate"]["iterator"]))
+            logger.error("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "iterator = %s" % task["iterate"]["iterator"]))
             raise
         iterator = loc["iterator"]
         logger.info("Iterator '%s' --> %s" % (task["iterate"]["iterator"], str(iterator)))
@@ -292,7 +292,7 @@ for task_name, _task in tasks.items():
     for iterator_value in iterator:
         # update settings according to iterator values
         if "iterate" in task and task["iterate"]:
-            logger.info("[iteration %d of %d]: %s = %s" % (iterator_counter+1, len(iterator), str(tuple(task["iterate"]["setting"])), str(iterator_value)))
+            logger.info("[Iteration %d of %d]: %s = %s" % (iterator_counter+1, len(iterator), str(tuple(task["iterate"]["setting"])), str(iterator_value)))
             update_settings(settings, task["iterate"]["setting"], iterator_value)
         
         # collect evaluation outcome for this task iteration averaged over task["rounds"]
@@ -319,7 +319,7 @@ for task_name, _task in tasks.items():
                     }.update(standard_imports), result)
                     #logger.info("OUTPUT RESULT: %s" % str(result))
                 except BaseException as e:
-                    logger.info("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "%s = %s" % (var, code)))
+                    logger.error("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "%s = %s" % (var, code)))
                     raise
                 output[var].append(result[var])
         
@@ -330,20 +330,20 @@ for task_name, _task in tasks.items():
                 try:
                     result = {}
                     try:
-                        exec("reduce_func = (lambda value: %s)" % task["reduce"][var], {
+                        exec("reduce_func = (lambda valuelist: %s)" % task["reduce"][var], {
                             "task": task,
                             "settings": settings,
                             "iterator_counter": iterator_counter,
                             "iterator_value": iterator_value
                         }.update(standard_imports), result)
                     except BaseException as e:
-                        logger.info("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "reduce_func = %s" % code))
+                        logger.warning("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "reduce_func = %s" % code))
                         raise
                     #logger.info("RESULT %s(%s) --> %s" % (str(result["reduce_func"]), str(output[var]), str((result["reduce_func"])(output[var]))))
                     output[var] = (result["reduce_func"])(output[var])
                 except BaseException as e:
-                    logger.info("Exception %s: %s while accumulating list %s" % (str(e.__class__.__name__), str(e), str(output[var])))
-                    logger.info("Setting output to raw list of round values...")
+                    logger.warning("Exception %s: %s while accumulating list %s" % (str(e.__class__.__name__), str(e), str(output[var])))
+                    logger.warning("Setting output to raw list of round values...")
                     output[var] = output[var]
         
         # save results
