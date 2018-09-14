@@ -229,6 +229,7 @@ def update_settings(settings, setting, value):
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="AnonPubSub node.\nHTTP Control Port: 9980\nNode Communication Port: 9999")
 parser.add_argument("-t", "--tasks", metavar='TASKS_FILE', help="Tasks description file to load", default="tasks.json")
 parser.add_argument("-f", "--filters", metavar='FILTERS_FILE', help="Filters to load (these provide raw values needed by tasks)", default="filters.py")
+parser.add_argument("-r", "--run", metavar='TASK1,TASK2,...', help="Comma separated list of tasks to run", default="*")
 parser.add_argument("-l", "--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
 
@@ -254,7 +255,14 @@ standard_imports = {
     "random": random,
     "reduce": reduce    # map and filter are standard, reduce has to be imported
 }
+to_run = list(tasks.keys())
+if args.run and args.run != "*":
+    to_run = str(args.run).split(",")
 for task_name, _task in tasks.items():
+    if task_name not in to_run:
+        logger.info("Ignoring task '%s' (requested on commandline)..." % task_name)
+        continue
+    
     # build task dict
     task = {"name": task_name}
     task.update(task_defaults)
@@ -358,10 +366,10 @@ for task_name, _task in tasks.items():
         iterator_counter += 1
         
         logger.info("**** Writing partial evaluation results...")
-        with open("results.json", "w") as f:
-            json.dump(all_results, f, sort_keys=True, indent=4)
+        with open("results.%s.json" % task_name, "w") as f:
+            json.dump(all_results[task_name], f, sort_keys=True, indent=4)
 
-logger.info("Writing evaluation results...")
+logger.info("Writing all evaluation results...")
 with open("results.json", "w") as f:
     json.dump(all_results, f, sort_keys=True, indent=4)
 
