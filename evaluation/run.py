@@ -6,19 +6,32 @@ from urllib.parse import quote_plus
 import sys
 import time
 import copy
-import json
+try:
+    import commentjson as json
+except:
+    import json
 import random
 import subprocess
 import numpy
 import os
+import re
+import signal
+from functools import reduce
+import copy
+import logging
+import logging.config
+import argparse
 
 
 # some convenience functions
 class Struct:
     def __init__(self, d):
         self.__dict__.update(d)
+    def __str__(self):
+        return str(self.__dict__)
 
 def genGraph(net, n, con=3, avgdegree=4, dim=2, threshold=0.1):
+    global logger
     if ("social" == net):
         G = nx.barabasi_albert_graph(n, con)
 
@@ -56,26 +69,55 @@ def genGraph(net, n, con=3, avgdegree=4, dim=2, threshold=0.1):
     return G
 
 def download_file(url):
+    global logger
     req = urllib2.Request(url)
     return urllib2.urlopen(req)
 
 def post_data(url, data):
+    global logger
     req = urllib2.Request(url, data)
     req.add_header("Content-Type",'application/json')
     return urllib2.urlopen(req)
 
 def send_command(ip, command, data=None):
+    global logger
     data = copy.deepcopy(data if isinstance(data, dict) else {})
     data["_command"] = command
-    print("\t\tSending command '%s' to '%s'..." % (command, ip))
+    logger.debug("******** Sending command '%s' to '%s'..." % (command, ip))
     return post_data("http://"+ip+":9980/command", bytes(json.dumps(data), "UTF-8"))
 
+def extract_data(task, standard_imports):
+    code_pattern = re.compile("^.*\*\*\*\*\*\*\*\*\*\*\* CODE_EVENT\((?P<event>[^)]*)\): (?P<code>.*)$")
+    # evaluate log output and return result
+    logger.info("**** Parsing log output...")
+    evaluation = {}
+    evaluation.update(copy.deepcopy(task["init"]))
+    with open("logs/full.log", "r") as f:
+        for line in f:
+            match = code_pattern.search(line)
+            if not match:
+                continue
+            event = match.group('event')
+            code = match.group('code')
+            try:
+                exec(code, {}.update(standard_imports), evaluation)
+            except BaseException as e:
+                logger.info("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), code))
+                raise
+    return Struct(evaluation)
+
 # generate randomly connected graph and add ip addresses and roles as configured
-def evaluate(graph_args, nodes, base_ip, publishers, subscribers, router, settings, runtime):
-    print("\tCreating graph with %d nodes (%d publishers and %d subscribers)..." % (nodes, publishers, subscribers), file=sys.stderr)
-    base_ip = str(base_ip).split(".")
-    G = genGraph("random", nodes, **graph_args)
-    pubs, subs = publishers, subscribers
+def evaluate(task, settings, standard_imports):
+    global logger
+    logger.info("**** Creating graph with %d nodes (%d publishers and %d subscribers)..." % (
+        task["nodes"],
+        task["publishers"],
+        task["subscribers"]
+    ))
+    filter_pattern = re.compile("#\*\*\*\*\*\*\*\*\*\*\* EVALUATOR_EXTENSION_POINT, PLEASE DON'T REMOVE \*\*\*\*\*\*\*\*\*\*\*#")
+    base_ip = str(task["base_ip"]).split(".")
+    G = genGraph("random", task["nodes"], **task["graph_args"])
+    pubs, subs = task["publishers"], task["subscribers"]
     for n in G.nodes():
         roles = {}
         if subs:
@@ -87,7 +129,13 @@ def evaluate(graph_args, nodes, base_ip, publishers, subscribers, router, settin
         G.node[n] = {"ip": "%d.%d.%d.%d" % (int(base_ip[0]), int(base_ip[1]), int(base_ip[2]), (int(base_ip[3])+n)), "roles": roles}    
         nx.relabel_nodes(G, {n: "ID: %d" % n}, False)
 
-    # start nodes
+    # start nodes (cleanup on sigint (CTRL-C) while nodes are running)
+    def sigint_handler(sig, frame):
+        signal.signal(signal.SIGINT, signal.SIG_IGN) # ignore SIGINT while shutting down
+        logger.info("Got interrupted, killing nodes!")
+        subprocess.call(["./helpers.sh", "stop"])
+        sys.exit(0)
+    signal.signal(signal.SIGINT, sigint_handler)
     ips = []
     for n in sorted(list(G.nodes())):
         ips.append(G.node[n]["ip"])
@@ -100,13 +148,13 @@ def evaluate(graph_args, nodes, base_ip, publishers, subscribers, router, settin
     with open("logs/graph.json", "w") as f:
         f.write(graph_data)
 
-    print("\tChecking for availability of all nodes...", file=sys.stderr)
+    logger.info("**** Checking for availability of all nodes...")
     for n in sorted(list(G.nodes())):
         ip = G.node[n]["ip"]
         online = False
         for i in range(1, 30):
             try:
-                print("\t\tTry %d for node '%s' (%s)..." % (i, n, ip))
+                logger.debug("******** Try %d for node '%s' (%s)..." % (i, n, ip))
                 download_file("http://%s:9980/" % ip)
                 online = True
                 break
@@ -114,60 +162,58 @@ def evaluate(graph_args, nodes, base_ip, publishers, subscribers, router, settin
                 time.sleep(1)
                 continue
         if not online:
-            print("\t\tNode '%s' (%s) does not come online, aborting!" % (n, ip), file=sys.stderr)
+            logger.info("******** Node '%s' (%s) does not come online, aborting!" % (n, ip))
             sys.exit(1)
-        print("\t\tNode '%s' (%s) is online..." % (n, ip))
+        logger.debug("******** Node '%s' (%s) is online..." % (n, ip))
         send_command(ip, "stop")
 
-    print("\tConfiguring filters...", file=sys.stderr)
+    logger.info("**** Configuring node filters...")
     with open("filters.py", "r") as f:
         code = f.read()
+        code=filter_pattern.sub("""
+task = %s
+        """ % str(task), code)
         for n in sorted(list(G.nodes())):
             send_command(G.node[n]["ip"], "load_filters", {"code": code})
 
-    print("\tStarting routers...", file=sys.stderr)
+    logger.info("**** Starting routers...")
     for n in sorted(list(G.nodes())):
-        send_command(G.node[n]["ip"], "start", {"router": router, "settings": settings})
+        send_command(G.node[n]["ip"], "start", {"router": task["router"], "settings": settings})
     time.sleep(1)
 
-    print("\tConfiguring router connections...", file=sys.stderr)
+    logger.info("**** Configuring node connections...")
     for n in sorted(list(G.nodes())):
         for neighbor in G[n]:
             send_command(G.node[n]["ip"], "connect", {"addr": G.node[neighbor]["ip"]})
     time.sleep(2)
 
-    print("\tConfiguring router roles (%d publishers, %d subscribers)..." % (publishers, subscribers), file=sys.stderr)
+    logger.info("**** Configuring node roles (%d publishers, %d subscribers)..." % (task["publishers"], task["subscribers"]))
     role_to_command = {"subscriber": "subscribe", "publisher": "publish"}
     for n in sorted(list(G.nodes())):
         for roletype, channellist in G.node[n]["roles"].items():
             for channel in channellist:
                 send_command(G.node[n]["ip"], role_to_command[roletype], {"channel": channel})
 
-    print("\tWaiting %.3f seconds for routers doing their work..." % runtime, file=sys.stderr)
-    time.sleep(runtime)
+    logger.info("**** Waiting %.3f seconds for routers doing their work..." % task["runtime"])
+    time.sleep(task["runtime"])
 
-    print("\tStopping routers and killing nodes...", file=sys.stderr)
+    logger.info("**** Stopping routers and killing nodes...")
     for n in sorted(list(G.nodes())):
         send_command(G.node[n]["ip"], "stop")
+    time.sleep(2)
     subprocess.call(["./helpers.sh", "stop"])
-
-    # evaluate log output
-    print("\tParsing log output...", file=sys.stderr)
-    subprocess.call(["./helpers.sh", "evaluate"])
-    with open("logs/evaluation.py", "r") as f:
-        evaluation = {}
-        exec(f.read(), {}, evaluation)
-        evaluation = Struct(evaluation)     # create object from dictionary for easier access
-    evaluation.slave_publishers = (publishers - evaluation.master_publishers)
-    return evaluation
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    
+    return extract_data(task, standard_imports)
 
 def update_settings(settings, setting, value):
+    global logger
     # multi var version
     if isinstance(setting, list):
-        assert len(s) != len(value)
+        assert len(setting) == len(value), "Multi var version of iterator has different length: %d != %d" % (len(setting), len(value))
         c = 0
         for s in setting:
-            update_settings(s, value[c])
+            update_settings(settings, s, value[c])
             c += 1
         return
     # single var version
@@ -179,75 +225,138 @@ def update_settings(settings, setting, value):
     settings[last_entry] = value
 
 
+# parse commandline
+parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="AnonPubSub node.\nHTTP Control Port: 9980\nNode Communication Port: 9999")
+parser.add_argument("--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
+args = parser.parse_args()
+
+with open("logger.json", 'r') as logging_configuration_file:
+    logger_config=json.load(logging_configuration_file)
+logger_config["handlers"]["stderr"]["level"] = args.log
+logging.config.dictConfig(logger_config)
+logger = logging.getLogger()
+logger.info('Logger configured...')
+
 # load tasks file
-print("Loading tasks description file...", file=sys.stderr)
+logger.info("Loading tasks description file...")
 with open("tasks.json", "r") as f:
-    tasks = json.load(f)
-    global_settings = tasks["settings"]
-    tasks = tasks["tasks"]
+    tasks_json = json.load(f)
+    global_settings = tasks_json["settings"]
+    task_defaults = tasks_json["task_defaults"]
+    tasks = tasks_json["tasks"]
 
 # execute evaluation tasks
 all_results = {}
-for task_name, task in tasks.items():
-    if "output" not in task or not len(task["output"]):
-        print("Ignoring task '%s' (no output defined)..." % task_name, file=sys.stderr)
+standard_imports = {
+    "numpy": numpy,
+    "random": random,
+    "reduce": reduce    # map and filter are standard, reduce has to be imported
+}
+for task_name, _task in tasks.items():
+    # build task dict
+    task = {}
+    task.update(task_defaults)
+    task.update(_task)
+    if "graph_args" not in task or not task["graph_args"]:
+        task["graph_args"] = {}
+    if "reduce" not in task or not task["reduce"]:
+        task["reduce"] = {}
+    
+    if "output" not in _task or not len(task["output"]):
+        logger.info("Ignoring task '%s' (no output defined)..." % task_name)
         continue
-    print("Executing task '%s'..." % task_name, file=sys.stderr)
-    subprocess.call("./helpers.sh cleanup logs.%s" % task_name, shell=True)
+    
+    logger.info("Executing task '%s'..." % task_name)
     all_results[task_name] = {}
+    subprocess.call("./helpers.sh cleanup logs.%s" % task_name, shell=True)
+    
+    # build settings dict
     settings = {}
     settings.update(global_settings)
     settings.update(task["settings"] if "settings" in task and task["settings"] else {})
-    if "graph_args" not in task or not task["graph_args"]:
-        task["graph_args"] = {}
     
     # interprete iterator if given
     iterator = ["default_iterator"]       # dummy iterator having only one entry
     if "iterate" in task and task["iterate"]:
         loc = {}
-        exec("iterator = %s" % task["iterate"]["iterator"], {"numpy": numpy, "random": random}, loc)
+        try:
+            exec("iterator = %s" % task["iterate"]["iterator"], {}.update(standard_imports), loc)
+        except BaseException as e:
+            logger.info("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "iterator = %s" % task["iterate"]["iterator"]))
+            raise
         iterator = loc["iterator"]
-        print("Iterator '%s' --> %s" % (task["iterate"]["iterator"], str(iterator)))
+        logger.info("Iterator '%s' --> %s" % (task["iterate"]["iterator"], str(iterator)))
     
     # use iterator to evaluate task["rounds"] networks and get the average of every expression defined in task["output"]
     iterator_counter = 0
     for iterator_value in iterator:
+        # update settings according to iterator values
         if "iterate" in task and task["iterate"]:
-            print("Iterating over %s: %s --> %s" % (str(task["iterate"]["setting"]), str(iterator), str(iterator_value)), file=sys.stderr)
+            logger.info("[iteration %d of %d]: %s = %s" % (iterator_counter+1, len(iterator), str(tuple(task["iterate"]["setting"])), str(iterator_value)))
             update_settings(settings, task["iterate"]["setting"], iterator_value)
+        
         # collect evaluation outcome for this task iteration averaged over task["rounds"]
         output = {}
-        for round_num in range(task["rounds"]):
-            print("Beginning evaluation round %d..." % round_num, file=sys.stderr)
-            evaluation = evaluate(
-                task["graph_args"],
-                int(task["nodes"]),
-                task["base_ip"],
-                int(task["publishers"]),
-                int(task["subscribers"]),
-                task["router"],
-                settings,
-                float(task["runtime"])
-            )
-            os.rename("logs", "logs.%s%s.r%d" % (task_name, (".i%d" % iterator_counter if "iterate" in task and task["iterate"] else ""), round_num))
+        for round_num in range(int(task["rounds"])):
+            logger.info("Beginning evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
+            # evaluate graph
+            evaluation = evaluate(task, settings, standard_imports)
+            os.rename("logs", "logs.%s%s.r%d" % (task_name, (".i%d" % (iterator_counter+1) if "iterate" in task and task["iterate"] else ""), (round_num+1)))
+            #logger.info("EVALUATION: %s" % str(evaluation))
+            # generate round output vars from raw evaluation input via code in taskfile
             for var, code in task["output"].items():
                 if var not in output:
                     output[var] = []
                 result = {}
-                exec("%s = %s" % (var, code), {"evaluation": evaluation, "numpy": numpy}, result)
+                try:
+                    exec("%s = %s" % (var, code), {
+                        "task": task,
+                        "settings": settings,
+                        "round_num": round_num,
+                        "iterator_counter": iterator_counter,
+                        "iterator_value": iterator_value,
+                        "evaluation": evaluation
+                    }.update(standard_imports), result)
+                    #logger.info("OUTPUT RESULT: %s" % str(result))
+                except BaseException as e:
+                    logger.info("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "%s = %s" % (var, code)))
+                    raise
                 output[var].append(result[var])
-        for var in task["output"]:
-            output[var] = numpy.mean(output[var])
-        all_results[task_name][iterator_value] = output
+        
+        # accumulate output of all rounds via reduce function specified in taskfile, if wanted
+        for var in list(output.keys()):
+            # only reduce when wanted
+            if var in task["reduce"]:
+                try:
+                    result = {}
+                    try:
+                        exec("reduce_func = (lambda value: %s)" % task["reduce"][var], {
+                            "task": task,
+                            "settings": settings,
+                            "iterator_counter": iterator_counter,
+                            "iterator_value": iterator_value
+                        }.update(standard_imports), result)
+                    except BaseException as e:
+                        logger.info("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "reduce_func = %s" % code))
+                        raise
+                    #logger.info("RESULT %s(%s) --> %s" % (str(result["reduce_func"]), str(output[var]), str((result["reduce_func"])(output[var]))))
+                    output[var] = (result["reduce_func"])(output[var])
+                except BaseException as e:
+                    logger.info("Exception %s: %s while accumulating list %s" % (str(e.__class__.__name__), str(e), str(output[var])))
+                    logger.info("Setting output to raw list of round values...")
+                    output[var] = output[var]
+        
+        # save results
+        all_results[task_name]["%s = %s" % (str(task["iterate"]["setting"]), str(iterator_value))] = output
         iterator_counter += 1
         
-        print("Writing partial evaluation results...", file=sys.stderr)
+        logger.info("Writing partial evaluation results...")
         with open("results.json", "w") as f:
             json.dump(all_results, f, sort_keys=True, indent=4)
 
-print("Writing evaluation results...", file=sys.stderr)
+logger.info("Writing evaluation results...")
 with open("results.json", "w") as f:
     json.dump(all_results, f, sort_keys=True, indent=4)
 
-print("All done", file=sys.stderr)
+logger.info("All done")
 sys.exit(0)

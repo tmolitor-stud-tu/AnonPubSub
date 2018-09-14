@@ -18,6 +18,8 @@ class Base(object):
         pass
     def router_command_incoming(self, command, router):
         pass
+    def subscribed_datamsg_incoming(self, msg, router):
+        pass
     def covert_msg_incoming(self, msg, con):
         pass
     def covert_msg_outgoing(self, msg, con):
@@ -47,7 +49,8 @@ def load(code, attributes):
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:
-        return "Exception loading filter definitions: %s" % str(e)
+        logger.exception(e)
+        return "Exception loading filter definitions: %s: %s" % (str(e.__class__.__name__), str(e))
     if not f:
         return "Error loading filter definitions: No class definition for 'Filters' found!"
     for key, value in attributes.items():       # set all attributes
@@ -79,6 +82,9 @@ def gui_event_outgoing(event):
 
 def router_command_incoming(command, router):
     return proxy("router_command_incoming", command, router)
+
+def subscribed_datamsg_incoming(msg, router):
+    return proxy("subscribed_datamsg_incoming", msg, router)
 
 def covert_msg_incoming(msg, con):
     return proxy("covert_msg_incoming", msg, con)

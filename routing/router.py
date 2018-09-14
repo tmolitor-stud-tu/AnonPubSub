@@ -70,7 +70,8 @@ class Router(RouterBase):
         retval = msg["id"] in self.seen_data_ids
         if msg["channel"] in self.subscriptions and msg["id"] not in self.seen_data_ids:
             self.seen_data_ids.add(msg["id"])
-            self.subscriptions[msg["channel"]](msg["data"])        # inform own subscriber of new data
+            if not filters.subscribed_datamsg_incoming(msg, self):      # allow data input to be filtered, too
+                self.subscriptions[msg["channel"]](msg["data"])         # inform own subscriber of new data
         return retval
     
     # *** command methods that can be overwritten or used as is by child classes ***

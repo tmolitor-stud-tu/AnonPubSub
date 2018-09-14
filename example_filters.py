@@ -35,6 +35,9 @@ class Filters(Base):
     def router_command_incoming(self, command, router):
         pass
     
+    def subscribed_datamsg_incoming(self, msg, router):
+        pass
+    
     def covert_msg_incoming(self, msg, con):
         #self.logger.info("*********** COVERT INCOMING(%s) connection %s ***********" % (msg.get_type(), con))
         # example to indicate incoming ant

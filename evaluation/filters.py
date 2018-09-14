@@ -2,8 +2,15 @@
 # *** these filters do NOT see ping messages, nor do routers see them ***
 # *** global imports are NOT accessible, do imports in __init__ and bind them to an attribute ***
 
+
+#**********************************************************************#
+#*********** EVALUATOR_EXTENSION_POINT, PLEASE DON'T REMOVE ***********#
+#**********************************************************************#
+
+
 class Filters(Base):
     def __init__(self, logger):
+        
         # init parent class
         super().__init__(logger)
         
@@ -45,6 +52,9 @@ class Filters(Base):
         if command["_command"] == "subscribe":
             self.started = self.time.time()
     
+    def subscribed_datamsg_incoming(self, msg, router):
+        pass
+    
     def covert_msg_incoming(self, msg, con):
         if msg.get_type() == "Flooding_advertise" and not msg["reflood"]:
             channel = msg["channel"]
@@ -61,8 +71,11 @@ class Filters(Base):
                     if publisher in self.router._ActivePathsMixin__reverse_edges[channel][subscriber]:
                         active_peer = self.router._ActivePathsMixin__reverse_edges[channel][subscriber][publisher]["peer"]
                         if sorting == -1 and active_peer != peer_id:
-                            self.logger.info("*********** SHORTER NONCE: %s" % ("subscriber" if self.router.node_id == subscriber else "intermediate"))
-                            self.logger.info("*********** DATA: node_id=%s, subscriber=%s, msg=%s" % (self.router.node_id, subscriber, str(msg)))
+                            if self.router.node_id == subscriber:
+                                self.logger.error("*********** CODE_EVENT(shorter_nonce): shorter_subscribers += 1")
+                            else:
+                                self.logger.error("*********** CODE_EVENT(shorter_nonce): shorter_intermediates += 1")
+                            self.logger.info("*********** DEBUG_DATA: node_id=%s, subscriber=%s, msg=%s" % (self.router.node_id, subscriber, str(msg)))
 
     def covert_msg_outgoing(self, msg, con):
         if self.router.__class__.__name__ == "Flooding":
@@ -74,18 +87,21 @@ class Filters(Base):
                          if channel in self.router.advertisement_routing_table else None)
                 shortest_nonce = self.router.advertisement_routing_table[channel][chain].peekitem(0)[0]
                 if None in self.router.advertisement_routing_table[channel][chain][shortest_nonce] and not self.mutation_logged:
-                    self.logger.info("*********** BECOMING NEW MASTER: node_id=%s" % self.router.node_id)
+                    self.logger.error("*********** CODE_EVENT(become_master): master_publishers += 1")
+                    self.logger.info("*********** DEBUG_DATA: node_id=%s" % self.router.node_id)
                     self.mutation_logged = True
     
     def msg_incoming(self, msg, con):
-        if "test" not in self.router.subscriptions:     # only check subscriber perspective
-            return
-        if msg["data"] not in self.data_received:
-            self.data_received[msg["data"]] = 0
-        self.data_received[msg["data"]] += 1
-        if self.data_received[msg["data"]] == 5 and not self.overlay_constructed:
-            self.logger.info("*********** OVERLAY CONSTRUCTED: %.3f" % (self.time.time() - self.started))
-            self.overlay_constructed = True
+        global task
+        
+        if msg["channel"] in self.router.subscriptions and msg["id"] not in self.router.seen_data_ids:      # only check subscriber perspective
+            if msg["data"] not in self.data_received:
+                self.data_received[msg["data"]] = 0
+            self.data_received[msg["data"]] += 1
+            if self.data_received[msg["data"]] == task["publishers"] and not self.overlay_constructed:
+                self.logger.error("*********** CODE_EVENT(overlay_constructed): overlay_construction.append(%.3f)" % (self.time.time() - self.started))
+                self.logger.info("*********** DEBUG_DATA: node_id = %s" % self.router.node_id)
+                self.overlay_constructed = True
     
     def msg_outgoing(self, msg, con):
         #if msg.get_type() == "Flooding_data":
