@@ -100,7 +100,7 @@
 			},
 			"output": {
 				"master_publishers": "evaluation.master_publishers",
-				"slave_publishers": "task[\"publishers\"] - evaluation.master_publishers"
+				"slave_publishers": "task['publishers'] - evaluation.master_publishers"
 			},
 			"reduce": {
 				"master_publishers": "numpy.mean(valuelist)",
@@ -118,14 +118,20 @@
 				"overlay_construction": []
 			},
 			"output": {
-				"overlay_construction_min": "min(evaluation.overlay_construction)",
-				"overlay_construction_max": "max(evaluation.overlay_construction)",
-				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction)"
+				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_all_min": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_max": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_avg": "len(evaluation.overlay_construction)"
 			},
 			"reduce": {
 				"overlay_construction_min": "numpy.mean(valuelist)",
 				"overlay_construction_max": "numpy.mean(valuelist)",
-				"overlay_construction_avg": "numpy.mean(valuelist)"
+				"overlay_construction_avg": "numpy.mean(valuelist)",
+				"overlay_construction_all_min": "min(valuelist)",
+				"overlay_construction_all_max": "max(valuelist)",
+				"overlay_construction_all_avg": "numpy.mean(valuelist)"
 			}
 		},
 		"aco_overlay_construction": {
@@ -139,14 +145,20 @@
 				"overlay_construction": []
 			},
 			"output": {
-				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
-				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
-				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)"
+				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_all_min": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_max": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_avg": "len(evaluation.overlay_construction)"
 			},
 			"reduce": {
 				"overlay_construction_min": "numpy.mean(valuelist)",
 				"overlay_construction_max": "numpy.mean(valuelist)",
-				"overlay_construction_avg": "numpy.mean(valuelist)"
+				"overlay_construction_avg": "numpy.mean(valuelist)",
+				"overlay_construction_all_min": "min(valuelist)",
+				"overlay_construction_all_max": "max(valuelist)",
+				"overlay_construction_all_avg": "numpy.mean(valuelist)"
 			}
 		},
 		"aco_overlay_construction_bandwidth": {
@@ -160,14 +172,20 @@
 				"overlay_construction": []
 			},
 			"output": {
-				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
-				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
-				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)"
+				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_all_min": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_max": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_avg": "len(evaluation.overlay_construction)"
 			},
 			"reduce": {
 				"overlay_construction_min": "numpy.mean(valuelist)",
 				"overlay_construction_max": "numpy.mean(valuelist)",
-				"overlay_construction_avg": "numpy.mean(valuelist)"
+				"overlay_construction_avg": "numpy.mean(valuelist)",
+				"overlay_construction_all_min": "min(valuelist)",
+				"overlay_construction_all_max": "max(valuelist)",
+				"overlay_construction_all_avg": "numpy.mean(valuelist)"
 			}
 		},
 		"all_reconnects_on_packetloss": {
@@ -186,9 +204,9 @@
 				"reconnects_avg": "numpy.mean(evaluation.reconnects) if len(evaluation.reconnects) else 0"
 			},
 			"reduce": {
-				"overlay_construction_min": "numpy.mean(valuelist)",
-				"overlay_construction_max": "numpy.mean(valuelist)",
-				"overlay_construction_avg": "numpy.mean(valuelist)"
+				"reconnects_min": "numpy.mean(valuelist)",
+				"reconnects_max": "numpy.mean(valuelist)",
+				"reconnects_avg": "numpy.mean(valuelist)"
 			}
 		},
 		"flooding_overlay_construction_packetloss": {
@@ -202,14 +220,20 @@
 				"overlay_construction": []
 			},
 			"output": {
-				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
-				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
-				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)"
+				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_all_min": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_max": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_avg": "len(evaluation.overlay_construction)"
 			},
 			"reduce": {
 				"overlay_construction_min": "numpy.mean(valuelist)",
 				"overlay_construction_max": "numpy.mean(valuelist)",
-				"overlay_construction_avg": "numpy.mean(valuelist)"
+				"overlay_construction_avg": "numpy.mean(valuelist)",
+				"overlay_construction_all_min": "min(valuelist)",
+				"overlay_construction_all_max": "max(valuelist)",
+				"overlay_construction_all_avg": "numpy.mean(valuelist)"
 			}
 		},
 		"aco_overlay_construction_packetloss": {
@@ -223,14 +247,20 @@
 				"overlay_construction": []
 			},
 			"output": {
-				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
-				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)",
-				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task[\"subscribers\"] else \"only %d successfull connects\" % len(evaluation.overlay_construction)"
+				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_all_min": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_max": "len(evaluation.overlay_construction)",
+				"overlay_construction_all_avg": "len(evaluation.overlay_construction)"
 			},
 			"reduce": {
 				"overlay_construction_min": "numpy.mean(valuelist)",
 				"overlay_construction_max": "numpy.mean(valuelist)",
-				"overlay_construction_avg": "numpy.mean(valuelist)"
+				"overlay_construction_avg": "numpy.mean(valuelist)",
+				"overlay_construction_all_min": "min(valuelist)",
+				"overlay_construction_all_max": "max(valuelist)",
+				"overlay_construction_all_avg": "numpy.mean(valuelist)"
 			}
 		}
 	}
