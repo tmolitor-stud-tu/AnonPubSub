@@ -72,7 +72,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         weights = []
         for node_id in population:
             if node_id in self.pheromones[channel]:
-                weights.append(self.pheromones[channel][node_id] * strictness)
+                weights.append(self.pheromones[channel][node_id] ** strictness)
             else:
                 weights.append(0.0)
         
