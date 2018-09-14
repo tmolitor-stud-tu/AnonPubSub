@@ -292,7 +292,12 @@ for task_name, _task in tasks.items():
     for iterator_value in iterator:
         # update settings according to iterator values
         if "iterate" in task and task["iterate"]:
-            logger.info("[Iteration %d of %d]: %s = %s" % (iterator_counter+1, len(iterator), str(tuple(task["iterate"]["setting"])), str(iterator_value)))
+            logger.info("[Iteration %d of %d]: %s = %s" % (
+                iterator_counter+1,
+                len(iterator),
+                str(tuple(task["iterate"]["setting"]) if isinstance(task["iterate"]["setting"], list) else task["iterate"]["setting"]),
+                str(iterator_value)
+            ))
             update_settings(settings, task["iterate"]["setting"], iterator_value)
         
         # collect evaluation outcome for this task iteration averaged over task["rounds"]
