@@ -107,7 +107,7 @@ def extract_data(task, standard_imports):
     return Struct(evaluation)
 
 # generate randomly connected graph and add ip addresses and roles as configured
-def evaluate(task, settings, standard_imports):
+def evaluate(task, settings, standard_imports, args):
     global logger
     logger.info("******** Creating graph with %d nodes (%d publishers and %d subscribers)..." % (
         task["nodes"],
@@ -167,8 +167,8 @@ def evaluate(task, settings, standard_imports):
         logger.debug("************ Node '%s' (%s) is online..." % (n, ip))
         send_command(ip, "stop")
 
-    logger.info("******** Configuring node filters...")
-    with open("filters.py", "r") as f:
+    logger.info("******** Configuring node filters (%s)..." % args.filters)
+    with open(args.filters, "r") as f:
         code = f.read()
         code=filter_pattern.sub("""
 task = %s
@@ -227,7 +227,9 @@ def update_settings(settings, setting, value):
 
 # parse commandline
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="AnonPubSub node.\nHTTP Control Port: 9980\nNode Communication Port: 9999")
-parser.add_argument("--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
+parser.add_argument("-t", "--tasks", metavar='TASKS_FILE', help="Tasks description file to load", default="tasks.json")
+parser.add_argument("-f", "--filters", metavar='FILTERS_FILE', help="Filters to load (these provide raw values needed by tasks)", default="filters.py")
+parser.add_argument("-l", "--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
 
 with open("logger.json", 'r') as logging_configuration_file:
@@ -238,8 +240,8 @@ logger = logging.getLogger()
 logger.info('Logger configured...')
 
 # load tasks file
-logger.info("Loading tasks description file...")
-with open("tasks.json", "r") as f:
+logger.info("Loading tasks description file '%s'..." % args.tasks)
+with open(args.tasks, "r") as f:
     tasks_json = json.load(f)
     global_settings = tasks_json["settings"]
     task_defaults = tasks_json["task_defaults"]
@@ -254,7 +256,7 @@ standard_imports = {
 }
 for task_name, _task in tasks.items():
     # build task dict
-    task = {}
+    task = {"name": task_name}
     task.update(task_defaults)
     task.update(_task)
     if "graph_args" not in task or not task["graph_args"]:
@@ -305,7 +307,7 @@ for task_name, _task in tasks.items():
         for round_num in range(int(task["rounds"])):
             logger.info("**** Beginning evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
             # evaluate graph
-            evaluation = evaluate(task, settings, standard_imports)
+            evaluation = evaluate(task, settings, standard_imports, args)
             os.rename("logs", "logs.%s%s.r%d" % (task_name, (".i%d" % (iterator_counter+1) if "iterate" in task and task["iterate"] else ""), (round_num+1)))
             #logger.info("**** EVALUATION: %s" % str(evaluation))
             # generate round output vars from raw evaluation input via code in taskfile
