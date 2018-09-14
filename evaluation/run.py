@@ -83,13 +83,13 @@ def send_command(ip, command, data=None):
     global logger
     data = copy.deepcopy(data if isinstance(data, dict) else {})
     data["_command"] = command
-    logger.debug("******** Sending command '%s' to '%s'..." % (command, ip))
+    logger.debug("************ Sending command '%s' to '%s'..." % (command, ip))
     return post_data("http://"+ip+":9980/command", bytes(json.dumps(data), "UTF-8"))
 
 def extract_data(task, standard_imports):
     code_pattern = re.compile("^.*\*\*\*\*\*\*\*\*\*\*\* CODE_EVENT\((?P<event>[^)]*)\): (?P<code>.*)$")
     # evaluate log output and return result
-    logger.info("**** Parsing log output...")
+    logger.info("******** Parsing log output...")
     evaluation = {}
     evaluation.update(copy.deepcopy(task["init"]))
     with open("logs/full.log", "r") as f:
@@ -102,14 +102,14 @@ def extract_data(task, standard_imports):
             try:
                 exec(code, {}.update(standard_imports), evaluation)
             except BaseException as e:
-                logger.error("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), code))
+                logger.error("******** Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), code))
                 raise
     return Struct(evaluation)
 
 # generate randomly connected graph and add ip addresses and roles as configured
 def evaluate(task, settings, standard_imports):
     global logger
-    logger.info("**** Creating graph with %d nodes (%d publishers and %d subscribers)..." % (
+    logger.info("******** Creating graph with %d nodes (%d publishers and %d subscribers)..." % (
         task["nodes"],
         task["publishers"],
         task["subscribers"]
@@ -148,13 +148,13 @@ def evaluate(task, settings, standard_imports):
     with open("logs/graph.json", "w") as f:
         f.write(graph_data)
 
-    logger.info("**** Checking for availability of all nodes...")
+    logger.info("******** Checking for availability of all nodes...")
     for n in sorted(list(G.nodes())):
         ip = G.node[n]["ip"]
         online = False
         for i in range(1, 30):
             try:
-                logger.debug("******** Try %d for node '%s' (%s)..." % (i, n, ip))
+                logger.debug("************ Try %d for node '%s' (%s)..." % (i, n, ip))
                 download_file("http://%s:9980/" % ip)
                 online = True
                 break
@@ -162,12 +162,12 @@ def evaluate(task, settings, standard_imports):
                 time.sleep(1)
                 continue
         if not online:
-            logger.info("******** Node '%s' (%s) does not come online, aborting!" % (n, ip))
+            logger.info("************ Node '%s' (%s) does not come online, aborting!" % (n, ip))
             sys.exit(1)
-        logger.debug("******** Node '%s' (%s) is online..." % (n, ip))
+        logger.debug("************ Node '%s' (%s) is online..." % (n, ip))
         send_command(ip, "stop")
 
-    logger.info("**** Configuring node filters...")
+    logger.info("******** Configuring node filters...")
     with open("filters.py", "r") as f:
         code = f.read()
         code=filter_pattern.sub("""
@@ -176,28 +176,28 @@ task = %s
         for n in sorted(list(G.nodes())):
             send_command(G.node[n]["ip"], "load_filters", {"code": code})
 
-    logger.info("**** Starting routers...")
+    logger.info("******** Starting routers...")
     for n in sorted(list(G.nodes())):
         send_command(G.node[n]["ip"], "start", {"router": task["router"], "settings": settings})
     time.sleep(1)
 
-    logger.info("**** Configuring node connections...")
+    logger.info("******** Configuring node connections...")
     for n in sorted(list(G.nodes())):
         for neighbor in G[n]:
             send_command(G.node[n]["ip"], "connect", {"addr": G.node[neighbor]["ip"]})
     time.sleep(2)
 
-    logger.info("**** Configuring node roles (%d publishers, %d subscribers)..." % (task["publishers"], task["subscribers"]))
+    logger.info("******** Configuring node roles (%d publishers, %d subscribers)..." % (task["publishers"], task["subscribers"]))
     role_to_command = {"subscriber": "subscribe", "publisher": "publish"}
     for n in sorted(list(G.nodes())):
         for roletype, channellist in G.node[n]["roles"].items():
             for channel in channellist:
                 send_command(G.node[n]["ip"], role_to_command[roletype], {"channel": channel})
 
-    logger.info("**** Waiting %.3f seconds for routers doing their work..." % task["runtime"])
+    logger.info("******** Waiting %.3f seconds for routers doing their work..." % task["runtime"])
     time.sleep(task["runtime"])
 
-    logger.info("**** Stopping routers and killing nodes...")
+    logger.info("******** Stopping routers and killing nodes...")
     for n in sorted(list(G.nodes())):
         send_command(G.node[n]["ip"], "stop")
     time.sleep(2)
@@ -298,11 +298,11 @@ for task_name, _task in tasks.items():
         # collect evaluation outcome for this task iteration averaged over task["rounds"]
         output = {}
         for round_num in range(int(task["rounds"])):
-            logger.info("Beginning evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
+            logger.info("**** Beginning evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
             # evaluate graph
             evaluation = evaluate(task, settings, standard_imports)
             os.rename("logs", "logs.%s%s.r%d" % (task_name, (".i%d" % (iterator_counter+1) if "iterate" in task and task["iterate"] else ""), (round_num+1)))
-            #logger.info("EVALUATION: %s" % str(evaluation))
+            #logger.info("**** EVALUATION: %s" % str(evaluation))
             # generate round output vars from raw evaluation input via code in taskfile
             for var, code in task["output"].items():
                 if var not in output:
@@ -317,9 +317,9 @@ for task_name, _task in tasks.items():
                         "iterator_value": iterator_value,
                         "evaluation": evaluation
                     }.update(standard_imports), result)
-                    #logger.info("OUTPUT RESULT: %s" % str(result))
+                    #logger.info("**** OUTPUT RESULT: %s" % str(result))
                 except BaseException as e:
-                    logger.error("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "%s = %s" % (var, code)))
+                    logger.error("**** Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "%s = %s" % (var, code)))
                     raise
                 output[var].append(result[var])
         
@@ -337,20 +337,20 @@ for task_name, _task in tasks.items():
                             "iterator_value": iterator_value
                         }.update(standard_imports), result)
                     except BaseException as e:
-                        logger.warning("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "reduce_func = %s" % code))
+                        logger.warning("**** Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "reduce_func = %s" % code))
                         raise
-                    #logger.info("RESULT %s(%s) --> %s" % (str(result["reduce_func"]), str(output[var]), str((result["reduce_func"])(output[var]))))
+                    #logger.info("**** RESULT %s(%s) --> %s" % (str(result["reduce_func"]), str(output[var]), str((result["reduce_func"])(output[var]))))
                     output[var] = (result["reduce_func"])(output[var])
                 except BaseException as e:
-                    logger.warning("Exception %s: %s while accumulating list %s" % (str(e.__class__.__name__), str(e), str(output[var])))
-                    logger.warning("Setting output to raw list of round values...")
+                    logger.warning("**** Exception %s: %s while accumulating list %s" % (str(e.__class__.__name__), str(e), str(output[var])))
+                    logger.warning("**** Setting output to raw list of round values...")
                     output[var] = output[var]
         
         # save results
         all_results[task_name]["%s = %s" % (str(task["iterate"]["setting"]), str(iterator_value))] = output
         iterator_counter += 1
         
-        logger.info("Writing partial evaluation results...")
+        logger.info("**** Writing partial evaluation results...")
         with open("results.json", "w") as f:
             json.dump(all_results, f, sort_keys=True, indent=4)
 
