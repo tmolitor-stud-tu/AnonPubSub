@@ -2,12 +2,6 @@
 # *** these filters do NOT see ping messages, nor do routers see them ***
 # *** global imports are NOT accessible, do imports in __init__ and bind them to an attribute ***
 
-
-#**********************************************************************#
-#*********** EVALUATOR_EXTENSION_POINT, PLEASE DON'T REMOVE ***********#
-#**********************************************************************#
-
-
 class Filters(Base):
     def __init__(self, logger):
         
@@ -108,7 +102,7 @@ class Filters(Base):
             "aco_overlay_construction",
             "aco_overlay_construction_bandwidth",
             "flooding_overlay_construction_packetloss",
-            "aco_overlay_construction_packetloss"
+            "aco_overlay_construction_packetloss",
         ]:
             if msg["channel"] in self.router.subscriptions and msg["id"] not in self.router.seen_data_ids:      # only check subscriber perspective
                 if msg["data"] not in self.data_received:

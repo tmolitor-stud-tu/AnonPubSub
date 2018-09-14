@@ -114,7 +114,6 @@ def evaluate(task, settings, standard_imports, args):
         task["publishers"],
         task["subscribers"]
     ))
-    filter_pattern = re.compile("#\*\*\*\*\*\*\*\*\*\*\* EVALUATOR_EXTENSION_POINT, PLEASE DON'T REMOVE \*\*\*\*\*\*\*\*\*\*\*#")
     base_ip = str(task["base_ip"]).split(".")
     G = genGraph("random", task["nodes"], **task["graph_args"])
     pubs, subs = task["publishers"], task["subscribers"]
@@ -169,10 +168,7 @@ def evaluate(task, settings, standard_imports, args):
 
     logger.info("******** Configuring node filters (%s)..." % args.filters)
     with open(args.filters, "r") as f:
-        code = f.read()
-        code=filter_pattern.sub("""
-task = %s
-        """ % str(task), code)
+        code="\n".join(["task = %s" % str(task), f.read()])
         for n in sorted(list(G.nodes())):
             send_command(G.node[n]["ip"], "load_filters", {"code": code})
 
