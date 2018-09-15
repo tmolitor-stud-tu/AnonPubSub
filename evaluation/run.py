@@ -378,15 +378,15 @@ for task_name, _task in tasks.items():
         with open("results.%s.json" % task_name, "w") as f:
             json.dump(all_results[task_name], f, sort_keys=True, indent=4)
 
-logger.info("Adding all evaluation results to 'results.json'...")
-try:
-    with open("results.json", "r") as f:
-        results = json.load(f)
-except:
-    results = {}
-results.update(all_results)
-with open("results.json", "w") as f:
-    json.dump(results, f, sort_keys=True, indent=4)
+    logger.info("Adding all evaluation results to 'results.json'...")
+    try:
+        with open("results.json", "r") as f:
+            results = json.load(f)
+    except:
+        results = {}
+    results.update(all_results)
+    with open("results.json", "w") as f:
+        json.dump(results, f, sort_keys=True, indent=4)
 
 logger.info("All done")
 sys.exit(0)
