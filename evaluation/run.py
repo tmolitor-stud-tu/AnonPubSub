@@ -284,7 +284,7 @@ for task_name, _task in tasks.items():
     settings.update(task["settings"] if "settings" in task and task["settings"] else {})
     
     # interprete iterator if given
-    iterator = ["default_iterator"]       # dummy iterator having only one entry
+    iterator = [""]       # dummy iterator having only one entry
     if "iterate" in task and task["iterate"]:
         loc = {}
         try:
@@ -368,7 +368,10 @@ for task_name, _task in tasks.items():
                     output[var] = output[var]
         
         # save results
-        all_results[task_name]["%s = %s" % (str(task["iterate"]["setting"]) if "iterate" in task else "result", str(iterator_value))] = output
+        if "iterate" in task:
+            all_results[task_name]["%s = %s" % (str(task["iterate"]["setting"]), str(iterator_value))] = output
+        else:
+            all_results[task_name]["result"] = output
         iterator_counter += 1
         
         logger.info("**** Writing partial evaluation results to 'results.%s.json'..." % task_name)

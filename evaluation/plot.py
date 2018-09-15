@@ -14,7 +14,7 @@ for task_name, task_data in data.items():
     # extract graph parts
     x = []
     y = {}
-    heading = None
+    heading = ""
     subfigures = set()
     for _x, _y in task_data.items():
         _x = _x.split("=")
@@ -22,8 +22,8 @@ for task_name, task_data in data.items():
             heading = _x[0].strip()
             x.append(_x[1].strip())
         else:
-            heading = None
-            x.append("")
+            heading = ""
+            x.append("Messung")
         for _subfigure in list(_y.keys()):
             _subfigure = _subfigure.split("_")
             if _subfigure[-1].strip() in ("min", "max", "avg"):
