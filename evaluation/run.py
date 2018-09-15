@@ -368,7 +368,7 @@ for task_name, _task in tasks.items():
                     output[var] = output[var]
         
         # save results
-        all_results[task_name]["%s = %s" % (str(task["iterate"]["setting"]), str(iterator_value))] = output
+        all_results[task_name]["%s = %s" % (str(task["iterate"]["setting"]) if "iterate" in task else "result", str(iterator_value))] = output
         iterator_counter += 1
         
         logger.info("**** Writing partial evaluation results to 'results.%s.json'..." % task_name)
