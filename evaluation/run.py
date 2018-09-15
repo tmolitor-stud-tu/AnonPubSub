@@ -86,13 +86,13 @@ def send_command(ip, command, data=None):
     logger.debug("************ Sending command '%s' to '%s'..." % (command, ip))
     return post_data("http://"+ip+":9980/command", bytes(json.dumps(data), "UTF-8"))
 
-def extract_data(task, standard_imports):
+def extract_data(task, standard_imports, logfile="logs/full.log"):
     code_pattern = re.compile("^.*\*\*\*\*\*\*\*\*\*\*\* CODE_EVENT\((?P<event>[^)]*)\): (?P<code>.*)$")
     # evaluate log output and return result
     logger.info("******** Parsing log output...")
     evaluation = {}
     evaluation.update(copy.deepcopy(task["init"]))
-    with open("logs/full.log", "r") as f:
+    with open(logfile, "r") as f:
         for line in f:
             match = code_pattern.search(line)
             if not match:
@@ -225,7 +225,8 @@ def update_settings(settings, setting, value):
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="AnonPubSub node.\nHTTP Control Port: 9980\nNode Communication Port: 9999")
 parser.add_argument("-t", "--tasks", metavar='TASKS_FILE', help="Tasks description file to load", default="tasks.json")
 parser.add_argument("-f", "--filters", metavar='FILTERS_FILE', help="Filters to load (these provide raw values needed by tasks)", default="filters.py")
-parser.add_argument("-r", "--run", metavar='TASK1,TASK2,...', help="Comma separated list of tasks to run", default="*")
+parser.add_argument("-r", "--run", metavar='TASK1,TASK2,...', help="Comma separated list of tasks to run or extract", default="*")
+parser.add_argument("-e", '--extract', default=False, action='store_true')
 parser.add_argument("-l", "--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
 
@@ -274,7 +275,8 @@ for task_name, _task in tasks.items():
     
     logger.info("Executing task '%s'..." % task_name)
     all_results[task_name] = {}
-    subprocess.call("./helpers.sh cleanup logs.%s" % task_name, shell=True)
+    if not args.extract:
+        subprocess.call("./helpers.sh cleanup logs.%s" % task_name, shell=True)
     
     # build settings dict
     settings = {}
@@ -309,10 +311,15 @@ for task_name, _task in tasks.items():
         # collect evaluation outcome for this task iteration averaged over task["rounds"]
         output = {}
         for round_num in range(int(task["rounds"])):
-            logger.info("**** Beginning evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
-            # evaluate graph
-            evaluation = evaluate(task, settings, standard_imports, args)
-            os.rename("logs", "logs.%s%s.r%d" % (task_name, (".i%d" % (iterator_counter+1) if "iterate" in task and task["iterate"] else ""), (round_num+1)))
+            archive_dir = "logs.%s%s.r%d" % (task_name, (".i%d" % (iterator_counter+1) if "iterate" in task and task["iterate"] else ""), (round_num+1))
+            if not args.extract:        # evaluate graph
+                logger.info("**** Beginning evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
+                evaluation = evaluate(task, settings, standard_imports, args)
+                os.rename("logs", archive_dir)
+            else:                       # extract evaluation data from already created logfiles
+                logger.info("**** Extracting evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
+                evaluation = extract_data(task, standard_imports, logfile="%s/full.log" % archive_dir)
+            
             #logger.info("**** EVALUATION: %s" % str(evaluation))
             # generate round output vars from raw evaluation input via code in taskfile
             for var, code in task["output"].items():

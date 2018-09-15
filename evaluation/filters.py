@@ -49,7 +49,7 @@ class Filters(Base):
         global task
         if command["_command"] == "subscribe":
             self.started = self.time.time()
-        if command["_command"] == "remove_connection" and task["name"] == "all_reconnects_on_packetloss":
+        if command["_command"] == "remove_connection" and task["name"] in ["test", "all_reconnects_on_packetloss"]:
             self.logger.error("*********** CODE_EVENT(remove_connection): reconnects += 1")
     
     def subscribed_datamsg_incoming(self, msg, router):
@@ -58,7 +58,7 @@ class Filters(Base):
     
     def covert_msg_incoming(self, msg, con):
         global task
-        if msg.get_type() == "Flooding_advertise" and not msg["reflood"] and task["name"] == "flooding_suboptimal_paths":
+        if msg.get_type() == "Flooding_advertise" and not msg["reflood"] and task["name"] in ["test", "flooding_suboptimal_paths"]:
             channel = msg["channel"]
             nonce = self.base64.b64decode(bytes(msg["nonce"], "ascii"))    # decode nonce
             peer_id = con.get_peer_id()
@@ -82,7 +82,7 @@ class Filters(Base):
     def covert_msg_outgoing(self, msg, con):
         global task
         # only check first advertisements
-        if msg.get_type() == "Flooding_advertise" and not msg["reflood"] and task["name"] == "flooding_master_count":
+        if msg.get_type() == "Flooding_advertise" and not msg["reflood"] and task["name"] in ["test", "flooding_master_count"]:
             channel = msg["channel"]
             nonce = self.base64.b64decode(bytes(msg["nonce"], "ascii"))     # decode nonce
             peer_id = con.get_peer_id()
@@ -98,6 +98,7 @@ class Filters(Base):
         global task
         
         if task["name"] in [
+            "test",
             "flooding_overlay_construction",
             "aco_overlay_construction",
             "aco_overlay_construction_bandwidth",
