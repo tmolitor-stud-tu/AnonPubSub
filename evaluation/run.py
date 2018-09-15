@@ -226,7 +226,7 @@ parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, 
 parser.add_argument("-t", "--tasks", metavar='TASKS_FILE', help="Tasks description file to load", default="tasks.json")
 parser.add_argument("-f", "--filters", metavar='FILTERS_FILE', help="Filters to load (these provide raw values needed by tasks)", default="filters.py")
 parser.add_argument("-r", "--run", metavar='TASK1,TASK2,...', help="Comma separated list of tasks to run or extract", default="*")
-parser.add_argument("-e", '--extract', default=False, action='store_true')
+parser.add_argument("-e", '--extract', help="Don't simulate but only extract raw data from logfiles (make sure your task description hasn't changed since the simulation was run!!)", default=False, action='store_true')
 parser.add_argument("-l", "--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
 
@@ -315,12 +315,15 @@ for task_name, _task in tasks.items():
             if not args.extract:        # evaluate graph
                 logger.info("**** Beginning evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
                 evaluation = evaluate(task, settings, standard_imports, args)
+                # save tasks file for later reuse
+                with open("logs/tasks.json", "w") as f:
+                    json.dump(tasks_json, f, sort_keys=True, indent=4)
                 os.rename("logs", archive_dir)
             else:                       # extract evaluation data from already created logfiles
                 logger.info("**** Extracting evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
                 evaluation = extract_data(task, standard_imports, logfile="%s/full.log" % archive_dir)
-            
             #logger.info("**** EVALUATION: %s" % str(evaluation))
+            
             # generate round output vars from raw evaluation input via code in taskfile
             for var, code in task["output"].items():
                 if var not in output:

@@ -9,6 +9,7 @@ Package names are Debian ones.
 - python3-sortedcollections (package from debian buster needed)
 - python3-sortedcontainers
 - python3-networkx
+- python3-numpy
 
 - commentjson (pip3 install commentjson)
 
