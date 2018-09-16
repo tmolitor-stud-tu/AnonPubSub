@@ -98,6 +98,8 @@ try:
                 # try to publish via cover group and publish directly if we are in no cover group for this channel
                 if not group_router.publish(channel, to_publish[channel]):
                     router.publish(channel, to_publish[channel]);
+                else:
+                    router.unpublish(channel)   # unpublish if we are publishing via covergroup
                 to_publish[channel] += 1
             else:
                 logger.error("Cannot publish on channel '%s': no router initialized!" % str(channel))
