@@ -87,7 +87,7 @@ def send_command(ip, command, data=None, ignore_errors=False):
         logger.debug("************ Sending command '%s' to '%s'..." % (command, ip))
         return post_data("http://"+ip+":9980/command", bytes(json.dumps(data), "UTF-8"))
     except:
-        if ignore_error:
+        if ignore_errors:
             return
         subprocess.call(["./helpers.sh", "stop"])       # kill all running nodes before raising the exception
         raise
