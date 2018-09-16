@@ -71,6 +71,7 @@ class Connection(object):
                 Connection.port[connection_type]
             )
     
+    # internal static method
     @staticmethod
     def check_init(connection_type):
         with Connection.global_lock:
@@ -84,6 +85,7 @@ class Connection(object):
             Connection.check_init(connection_type)
             return Connection._new(connection_type, (host, Connection.port[connection_type]), True, reconnect_try)
     
+    # publish static method to terminate a connection to the given host
     @staticmethod
     def disconnect_from(connection_type, host):
         with Connection.global_lock:

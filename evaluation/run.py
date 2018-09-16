@@ -79,12 +79,18 @@ def post_data(url, data):
     req.add_header("Content-Type",'application/json')
     return urllib2.urlopen(req)
 
-def send_command(ip, command, data=None):
+def send_command(ip, command, data=None, ignore_errors=False):
     global logger
-    data = copy.deepcopy(data if isinstance(data, dict) else {})
-    data["_command"] = command
-    logger.debug("************ Sending command '%s' to '%s'..." % (command, ip))
-    return post_data("http://"+ip+":9980/command", bytes(json.dumps(data), "UTF-8"))
+    try:
+        data = copy.deepcopy(data if isinstance(data, dict) else {})
+        data["_command"] = command
+        logger.debug("************ Sending command '%s' to '%s'..." % (command, ip))
+        return post_data("http://"+ip+":9980/command", bytes(json.dumps(data), "UTF-8"))
+    except:
+        if ignore_error:
+            return
+        subprocess.call(["./helpers.sh", "stop"])       # kill all running nodes before raising the exception
+        raise
 
 def extract_data(task, standard_imports, logfile="logs/full.log"):
     code_pattern = re.compile("^.*\*\*\*\*\*\*\*\*\*\*\* CODE_EVENT\((?P<event>[^)]*)\): (?P<code>.*)$")
@@ -195,7 +201,7 @@ def evaluate(task, settings, standard_imports, args):
 
     logger.info("******** Stopping routers and killing nodes...")
     for n in sorted(list(G.nodes())):
-        send_command(G.node[n]["ip"], "stop")
+        send_command(G.node[n]["ip"], "stop", ignore_errors=True)
     time.sleep(2)
     subprocess.call(["./helpers.sh", "stop"])
     signal.signal(signal.SIGINT, signal.SIG_DFL)

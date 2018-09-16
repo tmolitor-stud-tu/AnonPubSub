@@ -33,9 +33,9 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
     settings = {
         "ANONYMOUS_IDS": True,
         "MAX_HASHES": 1000,         # this limits the maximum diameter of the underlay to this value
-        "REFLOOD_DELAY": 2.0,
+        "REFLOOD_DELAY": 4.0,
         "RANDOM_MASTER_PUBLISH": False,
-        "SUBSCRIBE_DELAY": 2.0,
+        "SUBSCRIBE_DELAY": 4.0,
         "AGGRESSIVE_TEARDOWN": False,       # completely tear down old active paths (or path fragments) if a new active path is found and activated
         "AGGRESSIVE_RESUBSCRIBE": False,
         "MIN_BECOME_MASTER_DELAY": 1.0,

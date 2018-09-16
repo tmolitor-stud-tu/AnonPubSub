@@ -41,6 +41,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         self._ProbabilisticForwardingMixin__configure(ACO.settings["PROBABILISTIC_FORWARDING_FRACTION"])
         
         # init own data structures
+        ACO.settings["ACTIVATING_ANTS"] = min(ACO.settings["ANT_COUNT"], ACO.settings["ACTIVATING_ANTS"])
         self.subscriber_ids = {}
         self.publisher_ids = {}
         self.pheromones = {}
@@ -442,11 +443,12 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             })
     
     def _send_out_ants(self, channel, round_count, ttl=6):
-        logger.info("Channel '%s': Round %d: Sending out %d new %s ants..." % (
+        logger.info("Channel '%s': Round %d: Sending out %d new ants (%d normal, %d activating)..." % (
             channel,
             round_count,
             ACO.settings["ANT_COUNT"],
-            "searching" if round_count % ACO.settings["ACTIVATION_ROUNDS"] else "activating"
+            ACO.settings["ANT_COUNT"] - (ACO.settings["ACTIVATING_ANTS"] if round_count % ACO.settings["ACTIVATION_ROUNDS"] == 0 else 0),
+            ACO.settings["ACTIVATING_ANTS"] if round_count % ACO.settings["ACTIVATION_ROUNDS"] == 0 else 0
         ))
         # send out ANT_COUNT ants
         for i in range(0, ACO.settings["ANT_COUNT"]):
