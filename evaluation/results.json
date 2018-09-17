@@ -1,0 +1,389 @@
+{
+    "aco_overlay_construction": {
+        "routing.ACO.ANT_ROUND_TIME = 1": {
+            "Overlay Aufbau in Sekunden_avg": 14.54432666666667,
+            "Overlay Aufbau in Sekunden_max": 22.932533333333332,
+            "Overlay Aufbau in Sekunden_min": 10.324933333333332
+        },
+        "routing.ACO.ANT_ROUND_TIME = 1.5": {
+            "Overlay Aufbau in Sekunden_avg": 20.1799,
+            "Overlay Aufbau in Sekunden_max": 32.230785714285716,
+            "Overlay Aufbau in Sekunden_min": 14.79107142857143
+        },
+        "routing.ACO.ANT_ROUND_TIME = 2": {
+            "Overlay Aufbau in Sekunden_avg": 19.2042,
+            "Overlay Aufbau in Sekunden_max": 25.717599999999997,
+            "Overlay Aufbau in Sekunden_min": 14.798000000000002
+        },
+        "routing.ACO.ANT_ROUND_TIME = 2.5": {
+            "Overlay Aufbau in Sekunden_avg": 24.782207142857143,
+            "Overlay Aufbau in Sekunden_max": 34.52292857142857,
+            "Overlay Aufbau in Sekunden_min": 17.689857142857143
+        },
+        "routing.ACO.ANT_ROUND_TIME = 3": {
+            "Overlay Aufbau in Sekunden_avg": 27.437414285714286,
+            "Overlay Aufbau in Sekunden_max": 33.68257142857143,
+            "Overlay Aufbau in Sekunden_min": 21.78807142857143
+        },
+        "routing.ACO.ANT_ROUND_TIME = 3.5": {
+            "Overlay Aufbau in Sekunden_avg": 29.064886666666666,
+            "Overlay Aufbau in Sekunden_max": 49.02433333333334,
+            "Overlay Aufbau in Sekunden_min": 21.284466666666667
+        },
+        "routing.ACO.ANT_ROUND_TIME = 4": {
+            "Overlay Aufbau in Sekunden_avg": 37.6271,
+            "Overlay Aufbau in Sekunden_max": 49.759428571428565,
+            "Overlay Aufbau in Sekunden_min": 27.505285714285712
+        }
+    },
+    "aco_overlay_construction_time_packetloss": {
+        "networking.Connection.PACKET_LOSS = 0": {
+            "Overlay Aufbau in Sekunden_avg": 15.647866666666664,
+            "Overlay Aufbau in Sekunden_max": 30.160933333333336,
+            "Overlay Aufbau in Sekunden_min": 9.460600000000001
+        },
+        "networking.Connection.PACKET_LOSS = 0.05": {
+            "Overlay Aufbau in Sekunden_avg": 17.663373333333332,
+            "Overlay Aufbau in Sekunden_max": 25.548266666666663,
+            "Overlay Aufbau in Sekunden_min": 13.590133333333334
+        },
+        "networking.Connection.PACKET_LOSS = 0.1": {
+            "Overlay Aufbau in Sekunden_avg": 20.30666,
+            "Overlay Aufbau in Sekunden_max": 32.67053333333333,
+            "Overlay Aufbau in Sekunden_min": 14.170866666666665
+        },
+        "networking.Connection.PACKET_LOSS = 0.15": {
+            "Overlay Aufbau in Sekunden_avg": 22.10568,
+            "Overlay Aufbau in Sekunden_max": 41.053599999999996,
+            "Overlay Aufbau in Sekunden_min": 13.957600000000001
+        },
+        "networking.Connection.PACKET_LOSS = 0.2": {
+            "Overlay Aufbau in Sekunden_avg": 21.892453333333336,
+            "Overlay Aufbau in Sekunden_max": 34.382799999999996,
+            "Overlay Aufbau in Sekunden_min": 14.139000000000001
+        },
+        "networking.Connection.PACKET_LOSS = 0.25": {
+            "Overlay Aufbau in Sekunden_avg": 27.282000000000004,
+            "Overlay Aufbau in Sekunden_max": 35.93213333333333,
+            "Overlay Aufbau in Sekunden_min": 20.57273333333333
+        },
+        "networking.Connection.PACKET_LOSS = 0.3": {
+            "Overlay Aufbau in Sekunden_avg": 36.26907333333333,
+            "Overlay Aufbau in Sekunden_max": 52.812866666666665,
+            "Overlay Aufbau in Sekunden_min": 23.354266666666668
+        }
+    },
+	    "aco_overlay_constructions_packetloss": {
+        "networking.Connection.PACKET_LOSS = 0": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "networking.Connection.PACKET_LOSS = 0.05": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "networking.Connection.PACKET_LOSS = 0.1": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "networking.Connection.PACKET_LOSS = 0.15": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "networking.Connection.PACKET_LOSS = 0.2": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "networking.Connection.PACKET_LOSS = 0.25": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "networking.Connection.PACKET_LOSS = 0.3": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        }
+    },
+    "aco_overlay_construction_success": {
+        "routing.ACO.ANT_ROUND_TIME = 1": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "routing.ACO.ANT_ROUND_TIME = 1.5": {
+            "Erfolgreich verbundene Subscriber_avg": 9.333333333333334,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 0
+        },
+        "routing.ACO.ANT_ROUND_TIME = 2": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "routing.ACO.ANT_ROUND_TIME = 2.5": {
+            "Erfolgreich verbundene Subscriber_avg": 9.8,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 7
+        },
+        "routing.ACO.ANT_ROUND_TIME = 3": {
+            "Erfolgreich verbundene Subscriber_avg": 9.933333333333334,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 9
+        },
+        "routing.ACO.ANT_ROUND_TIME = 3.5": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "routing.ACO.ANT_ROUND_TIME = 4": {
+            "Erfolgreich verbundene Subscriber_avg": 9.866666666666667,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 8
+        }
+    },
+    "flooding_master_count": {
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 10.0": {
+            "Master-Publisher": 1.8666666666666667,
+            "Slave-Publisher": 1.1333333333333333
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 11.0": {
+            "Master-Publisher": 1.9333333333333333,
+            "Slave-Publisher": 1.0666666666666667
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 12.0": {
+            "Master-Publisher": 1.6666666666666667,
+            "Slave-Publisher": 1.3333333333333333
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 13.0": {
+            "Master-Publisher": 1.4666666666666666,
+            "Slave-Publisher": 1.5333333333333334
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 14.0": {
+            "Master-Publisher": 1.4666666666666666,
+            "Slave-Publisher": 1.5333333333333334
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 15.0": {
+            "Master-Publisher": 1.4,
+            "Slave-Publisher": 1.6
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 16.0": {
+            "Master-Publisher": 1.5333333333333334,
+            "Slave-Publisher": 1.4666666666666666
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 17.0": {
+            "Master-Publisher": 1.6,
+            "Slave-Publisher": 1.4
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 18.0": {
+            "Master-Publisher": 1.4,
+            "Slave-Publisher": 1.6
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 19.0": {
+            "Master-Publisher": 1.6,
+            "Slave-Publisher": 1.4
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 20.0": {
+            "Master-Publisher": 1.4666666666666666,
+            "Slave-Publisher": 1.5333333333333334
+        }
+    },
+    "flooding_master_count_5": {
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 10.0": {
+            "Master-Publisher": 3.0,
+            "Slave-Publisher": 2.0
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 11.0": {
+            "Master-Publisher": 2.0,
+            "Slave-Publisher": 3.0
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 12.0": {
+            "Master-Publisher": 2.0,
+            "Slave-Publisher": 3.0
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 13.0": {
+            "Master-Publisher": 1.7333333333333334,
+            "Slave-Publisher": 3.2666666666666666
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 14.0": {
+            "Master-Publisher": 2.0,
+            "Slave-Publisher": 3.0
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 15.0": {
+            "Master-Publisher": 1.9333333333333333,
+            "Slave-Publisher": 3.066666666666667
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 16.0": {
+            "Master-Publisher": 1.7333333333333334,
+            "Slave-Publisher": 3.2666666666666666
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 17.0": {
+            "Master-Publisher": 1.6,
+            "Slave-Publisher": 3.4
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 18.0": {
+            "Master-Publisher": 1.5333333333333334,
+            "Slave-Publisher": 3.466666666666667
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 19.0": {
+            "Master-Publisher": 1.5333333333333334,
+            "Slave-Publisher": 3.466666666666667
+        },
+        "routing.Flooding.MAX_BECOME_MASTER_DELAY = 20.0": {
+            "Master-Publisher": 1.6,
+            "Slave-Publisher": 3.4
+        }
+    },
+    "flooding_overlay_construction": {
+        "result": {
+            "Overlay Aufbau in Sekunden_avg": 13.097539999999999,
+            "Overlay Aufbau in Sekunden_max": 14.653866666666667,
+            "Overlay Aufbau in Sekunden_min": 11.397733333333331
+        }
+    },
+    "flooding_overlay_construction_time_packetloss": {
+        "networking.Connection.PACKET_LOSS = 0": {
+            "Overlay Aufbau in Sekunden_avg": 14.302533333333335,
+            "Overlay Aufbau in Sekunden_max": 16.5316,
+            "Overlay Aufbau in Sekunden_min": 12.195600000000002
+        },
+        "networking.Connection.PACKET_LOSS = 0.05": {
+            "Overlay Aufbau in Sekunden_avg": 15.908693333333334,
+            "Overlay Aufbau in Sekunden_max": 18.5286,
+            "Overlay Aufbau in Sekunden_min": 13.711133333333333
+        },
+        "networking.Connection.PACKET_LOSS = 0.1": {
+            "Overlay Aufbau in Sekunden_avg": 15.949886666666666,
+            "Overlay Aufbau in Sekunden_max": 21.43293333333333,
+            "Overlay Aufbau in Sekunden_min": 12.906
+        },
+        "networking.Connection.PACKET_LOSS = 0.15": {
+            "Overlay Aufbau in Sekunden_avg": 16.1485,
+            "Overlay Aufbau in Sekunden_max": 24.24341666666666,
+            "Overlay Aufbau in Sekunden_min": 12.488750000000001
+        },
+        "networking.Connection.PACKET_LOSS = 0.2": {
+            "Overlay Aufbau in Sekunden_avg": 21.325499999999998,
+            "Overlay Aufbau in Sekunden_max": 32.23875,
+            "Overlay Aufbau in Sekunden_min": 16.5815
+        },
+        "networking.Connection.PACKET_LOSS = 0.25": {
+            "Overlay Aufbau in Sekunden_avg": 26.73956,
+            "Overlay Aufbau in Sekunden_max": 36.200599999999994,
+            "Overlay Aufbau in Sekunden_min": 19.602600000000002
+        }
+    },
+    "flooding_overlay_constructions_packetloss": {
+        "networking.Connection.PACKET_LOSS = 0": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "networking.Connection.PACKET_LOSS = 0.05": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "networking.Connection.PACKET_LOSS = 0.1": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "networking.Connection.PACKET_LOSS = 0.15": {
+            "Erfolgreich verbundene Subscriber_avg": 9.133333333333333,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 4
+        },
+        "networking.Connection.PACKET_LOSS = 0.2": {
+            "Erfolgreich verbundene Subscriber_avg": 8.533333333333333,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 3
+        },
+        "networking.Connection.PACKET_LOSS = 0.25": {
+            "Erfolgreich verbundene Subscriber_avg": 6.933333333333334,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 1
+        }
+    },
+    "flooding_suboptimal_paths": {
+        "routing.Flooding.SUBSCRIBE_DELAY = 0.0": {
+            "Forwarder": 0.2,
+            "Subscriber": 1.3333333333333333
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 0.5": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.4
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 1.0": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 1.5": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.2
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 2.0": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 2.5": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 3.0": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 3.5": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 4.0": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        }
+    },
+    "flooding_suboptimal_paths_5": {
+        "routing.Flooding.SUBSCRIBE_DELAY = 0.0": {
+            "Forwarder": 0.26666666666666666,
+            "Subscriber": 1.7333333333333334
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 0.5": {
+            "Forwarder": 0.3333333333333333,
+            "Subscriber": 1.9333333333333333
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 1.0": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.5333333333333333
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 1.5": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 2.0": {
+            "Forwarder": 0.06666666666666667,
+            "Subscriber": 0.4
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 2.5": {
+            "Forwarder": 0.06666666666666667,
+            "Subscriber": 0.26666666666666666
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 3.0": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 3.5": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        },
+        "routing.Flooding.SUBSCRIBE_DELAY = 4.0": {
+            "Forwarder": 0.0,
+            "Subscriber": 0.0
+        }
+    }
+}

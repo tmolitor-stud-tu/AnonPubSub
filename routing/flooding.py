@@ -40,7 +40,7 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         "AGGRESSIVE_RESUBSCRIBE": False,
         "MIN_BECOME_MASTER_DELAY": 1.0,
         "MAX_BECOME_MASTER_DELAY": 8.0,
-        "PROBABILISTIC_FORWARDING_FRACTION": 0.25,      # fraction of neighbors to select for probabilistic forwarding
+        "PROBABILISTIC_FORWARDING_FRACTION": 0.10,      # probability of neighbor selection to select for probabilistic forwarding
         "AGGRESSIVE_REFLOODING": True,
     }
     
@@ -607,7 +607,9 @@ class Flooding(Router, ActivePathsMixin, ProbabilisticForwardingMixin, CoverTraf
         
         # call parent class for common tasks (update self.subscriptions)
         super(Flooding, self)._subscribe_command(command)
-    
+        # create probabilistic forwarding tree
+        self._ProbabilisticForwardingMixin__add_subtree(command["channel"])
+        
     def _unsubscribe_command(self, command):
         # only do unsubscribe if needed
         if command["channel"] in self.subscriptions:

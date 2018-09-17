@@ -127,13 +127,13 @@ class Connection(object):
         if not len(types):
             logger.warning("Full networking shutdown: nothing to shutdown!")
             return
+        # stop reconnections from happening
+        Connection.reconnections_stopped.set()
         # stop all listeners without holding global_lock (listeners receiving data after this thread aqcuired the lock would otherwise deadlock)
         for connection_type in types:
             logger.warning("Stopping listener (type: %s)..." % connection_type)
             # stop listener (this prevents creation of new connections from incoming packets)
             Connection.listener[connection_type].stop()
-        # stop reconnections from happening
-        Connection.reconnections_stopped.set()
         # now start real shutdown of all connections while holding global_lock
         with Connection.global_lock:
             for connection_type in types:
@@ -274,7 +274,8 @@ class Connection(object):
                 ).derive(self.X25519_key.exchange(X25519PublicKey.from_public_bytes(data)))
         except Exception as e:
             self.logger.warning("Could not derive key on connection init, terminating connection! Exception: %s" % str(e))
-            self.terminate()
+            if not Connection.reconnections_stopped.is_set():
+                self.terminate()
     
     def _finalize_connection(self):
         # our connection is now established, inform router of the new connection and activate pinger thread
@@ -370,7 +371,10 @@ class Connection(object):
                 copy = self.watchdog_counter
             if copy <= 0:
                 self.logger.warning("Ping watchdog triggered in connection state '%s'!" % self.connection_state)
-                self.terminate()
+                if not Connection.reconnections_stopped.is_set():
+                    self.terminate()
+                else:
+                    return      # terminate watchdog thread on shutdown
                 if self.active_init and self.reconnect_try < Connection.settings["MAX_RECONNECTS"]:
                     if not Connection.reconnections_stopped.is_set():
                         self.reconnect_thread = Thread(name="local::"+Connection.node_id[self.connection_type]+"::_reconnect", target=self._reconnect, daemon=True)
@@ -409,7 +413,8 @@ class Connection(object):
                 Connection.listener[self.connection_type].get_socket().sendto(data, self.addr)
             except Exception as e:
                 self.logger.warning("Could not send packet to '%s', terminating connection! Exception: %s" % (str(self.addr), str(e)))
-                self.terminate()
+                if not Connection.reconnections_stopped.is_set():
+                    self.terminate()
         
     def _encrypt(self, packet):
         if not Connection.settings["ENCRYPT_PACKETS"]:

@@ -31,7 +31,7 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
         #"ANT_MAINTENANCE_TIME": ACO.settings["DEFAULT_ROUNDS"] * ACO.settings["ANT_ROUND_TIME"],
         "ANT_MAINTENANCE_TIME": 0,
         "AGGRESSIVE_TEARDOWN": False,       # completely tear down old active paths (or path fragments) if a new active path is found and activated
-        "PROBABILISTIC_FORWARDING_FRACTION": 0.25,      # fraction of neighbors to select for probabilistic forwarding
+        "PROBABILISTIC_FORWARDING_FRACTION": 0.10,      # probability of neighbor selection to select for probabilistic forwarding
     }
     
     def __init__(self, node_id, queue):
@@ -307,6 +307,8 @@ class ACO(Router, ActivePathsMixin, ProbabilisticForwardingMixin):
             "round_count": 1,   # don't start at zero because 0 % x == 0 which means activating ants get send out in the very first round
             "retry": 0
         })
+        # create probabilistic forwarding tree
+        self._ProbabilisticForwardingMixin__add_subtree(command["channel"])
         
         # call parent class for common tasks (update self.subscriptions)
         super(ACO, self)._subscribe_command(command)
