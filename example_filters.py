@@ -29,7 +29,7 @@ class Filters(Base):
             else:
                 pass    #self.logger.info("*********** ERROR STARTING ROUTER: %s" % str(error))
     
-    def gui_event_outgoing(event):
+    def gui_event_outgoing(self, event):
         pass
     
     def router_command_incoming(self, command, router):
