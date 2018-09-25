@@ -196,7 +196,7 @@ def evaluate(task, settings, standard_imports, args):
             for channel in channellist:
                 send_command(G.node[n]["ip"], role_to_command[roletype], {"channel": channel})
 
-    logger.info("******** Waiting %.3f seconds for routers doing their work..." % task["runtime"])
+    logger.info("******** Waiting at most %.3f seconds for routers doing their work..." % task["runtime"])
     time.sleep(task["runtime"])
 
     logger.info("******** Stopping routers and killing nodes...")
@@ -374,6 +374,7 @@ for task_name, _task in tasks.items():
                     output[var] = output[var]
         
         # save results
+        all_results[task_name]["results"] = all_results[task_name]["results"] if "results" in all_results[task_name] else {}
         all_results[task_name]["captions"] = task["captions"] if "captions" in task else {}
         if "iterate" in task:
             all_results[task_name]["results"]["%s = %s" % (str(task["iterate"]["setting"]), str(iterator_value))] = output
