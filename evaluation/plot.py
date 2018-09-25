@@ -11,12 +11,16 @@ print("Plotting tasks data...")
 for task_name, task_data in data.items():
     print("task: %s" % task_name)
     
+    # old style results without captions
+    if "results" not in task_data:
+        task_data = {"results": task_data, "captions": {}}
+    
     # extract graph parts
     x = []
     y = {}
     heading = ""
     subfigures = set()
-    for _x, _y in task_data.items():
+    for _x, _y in task_data["results"].items():
         _x = _x.split("=")
         if len(_x) == 2:
             heading = _x[0].strip()
@@ -46,13 +50,17 @@ for task_name, task_data in data.items():
         for name in sorted(subfigures):
             # sort lists by x_values together (see: https://stackoverflow.com/a/13668413/3528174)
             x_values, y_values = [list(x) for x in zip(*sorted(zip(x, y[name]), key=lambda pair: pair[0]))]
-            legends.append(name)
+            legends.append(task_data["captions"][name] if name in task_data["captions"] else name)
             args.append(x_values)
             args.append(y_values)
             args.append("o-")
         plt.plot(*args)
+        
+        #plt.title(task_name)
         plt.legend(legends, loc="best")
-    if ptype == "errorbars":    # errorbars
+        plt.xlabel(heading)
+        plt.savefig("%s.pdf" % task_name, bbox_inches='tight')
+    if ptype == "errorbars_stabled":    # errorbars stapled
         legends = []
         bottoms = [0] * len(x)
         for name in sorted(subfigures):
@@ -62,11 +70,27 @@ for task_name, task_data in data.items():
             # sort lists by x_values together (see: https://stackoverflow.com/a/13668413/3528174)
             x_values, y_values = [list(x) for x in zip(*sorted(zip(x, avg_values), key=lambda pair: pair[0]))]
             offsets = numpy.abs(numpy.array([min_values, max_values]) - numpy.array(avg_values)[None, :])
-            legends.append(name)
+            legends.append(task_data["captions"][name] if name in task_data["captions"] else name)
             plt.bar(x_values, y_values, bottom=bottoms, yerr=offsets, capsize=8)
             bottoms = y_values
+        
+        #plt.title(task_name)
         plt.legend(legends, loc="best")
-    
-    #plt.title(task_name)
-    plt.xlabel(heading)
-    plt.savefig("%s.pdf" % task_name, bbox_inches='tight')
+        plt.xlabel(heading)
+        plt.savefig("%s.pdf" % task_name, bbox_inches='tight')
+    if ptype == "errorbars":    # single errorbars
+        for name in sorted(subfigures):
+            min_values = y["%s_%s" % (name, 'min')]
+            max_values = y["%s_%s" % (name, 'max')]
+            avg_values = y["%s_%s" % (name, 'avg')]
+            # sort lists by x_values together (see: https://stackoverflow.com/a/13668413/3528174)
+            x_values, y_values = [list(x) for x in zip(*sorted(zip(x, avg_values), key=lambda pair: pair[0]))]
+            offsets = numpy.abs(numpy.array([min_values, max_values]) - numpy.array(avg_values)[None, :])
+            plt.bar(x_values, y_values, yerr=offsets, capsize=8)
+            
+            #plt.title(task_name)
+            caption = task_data["captions"][name] if name in task_data["captions"] else name
+            plt.legend([caption], loc="best")
+            plt.xlabel(heading)
+            plt.savefig("%s_%s.pdf" % (task_name, name), bbox_inches='tight')
+
