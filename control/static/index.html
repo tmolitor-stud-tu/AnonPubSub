@@ -136,10 +136,11 @@
 			<tr title="Which routing algorithm should be used (settings for each algorithm are below)">
 				<td>Router:</td>
 				<td><select id="router">
-					<option calue="ACO">ACO</option>
-					<option calue="Flooding" selected>Flooding</option>
-					<option calue="Randomwalk">Randomwalk</option>
-					<option calue="Gossiping">Gossiping</option>
+					<option value="ACO">ACO</option>
+					<option value="Flooding" selected>Flooding</option>
+					<option value="Randomwalk">Randomwalk</option>
+					<option value="Gossiping">Gossiping</option>
+					<option value="Simple">Simple Flooding</option>
 				</select></td>
 			</tr>
 			</table>
@@ -273,6 +274,31 @@
 				<tr title="Fraction of neighbours to select for probabilistic forwarding">
 					<td>Probabilistic forwarding fraction:</td>
 					<td><input type="number" value="0.25" min="0" max="1" step="0.05" class="setting" data-setting="routing.Gossiping.PROBABILISTIC_FORWARDING_FRACTION"></td>
+				</tr>
+				</table>
+			</div>
+			<div class="router-settings router-Simple">
+				<div class="settings-heading">Simple Flooding settings:</div>
+				<table class="settings-container">
+				<tr title="Generate new per channel subscriber/publisher IDs for every new subscription/publication">
+					<td>Anonymous IDs:</td>
+					<td><label><input type="checkbox" checked data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="routing.Simple.ANONYMOUS_IDS"> true</label></td>
+				</tr>
+				<tr title="This limits the maximum diameter of the underlay approximately to this value (the actual possible diameter of the overlay depends on the structure of the overlay)">
+					<td>Max hashes:</td>
+					<td><input type="number" value="1000" min="100" max="10000" step="1" class="setting" data-setting="routing.Simple.MAX_HASHES"></td>
+				</tr>
+				<tr title="Time to wait before REflooding advertisements for alternative paths upon receiving an unadvertise message">
+					<td>Reflood delay:</td>
+					<td><input type="number" value="4.0" min="0" max="10.0" step="0.5" class="setting" data-setting="routing.Simple.REFLOOD_DELAY"></td>
+				</tr>
+				<tr title="Fraction of neighbours to select for probabilistic forwarding">
+					<td>Probabilistic forwarding fraction:</td>
+					<td><input type="number" value="0.25" min="0" max="1" step="0.05" class="setting" data-setting="routing.Simple.PROBABILISTIC_FORWARDING_FRACTION"></td>
+				</tr>
+				<tr title="If a node join creates a new shortest path: reflood advertisements into the whole overlay instead of stopping when a (longer) path for this subscriber is already known (this will create higher load)">
+					<td>Aggressive reflooding:</td>
+					<td><label><input type="checkbox" data-checked-value="true" data-unchecked-value="false" class="setting" data-setting="routing.Simple.AGGRESSIVE_REFLOODING"> true</label></td>
 				</tr>
 				</table>
 			</div>

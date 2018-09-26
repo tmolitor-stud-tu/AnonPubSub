@@ -12,8 +12,10 @@ class ProbabilisticForwardingMixin(object):
         self.__mixin_name = get_class_that_defined_method(self.__configure).__name__
         self.__additional_peers = {}
         self.__probability = 0
+        self.__known_trees = set()
     
     def __configure(self, probabilistic_forwarding_fraction):
+        logger.info("Probabilistic forwarding probability: %.3f" % probabilistic_forwarding_fraction)
         self.__probability = probabilistic_forwarding_fraction
     
     def __dump_state(self):
@@ -53,11 +55,20 @@ class ProbabilisticForwardingMixin(object):
     def __route_expand_tree(self, msg, incoming_connection):
         self.__init_channel(msg["channel"])
         
+        # only route further if we are not already a part of this tree
+        if msg["channel"] in self.__known_trees:
+            return
+        self.__known_trees.add(msg["channel"])
+        
         # select peers to add to subtree and forward message to them
         for con in self.connections.values():
-            rand = numpy.random.choice([True, False], p=[self.__probability, 1-self.__probability])
-            if rand:
+            p = [self.__probability, 1-self.__probability]
+            logger.debug("Probability for attribute overlay expansion via connection %s: %s" % (str(con), str(p)))
+            rand = numpy.random.choice([True, False], p=p)
+            if rand and con != incoming_connection:     # don't add incoming node to tree
                 logger.info("Selected connection %s for attribute overlay expansion" % str(con))
                 self.__additional_peers[msg["channel"]].add(con)
                 self._send_covert_msg(msg, con)
+            else:
+                logger.info("*NOT* selected connection %s for attribute overlay expansion" % str(con))
 
