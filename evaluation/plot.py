@@ -41,6 +41,8 @@ for task_name, task_data in data.items():
                 y[key] = []
             y[key].append(value)
             y[key] = y[key]
+    if "plot_type" in task_data:            # overwrite autodetected plot type
+        ptype = task_data["plot_type"]
     
     # plot graph
     plt.figure()
@@ -60,6 +62,7 @@ for task_name, task_data in data.items():
         plt.legend(legends, loc="best")
         plt.xlabel(heading)
         plt.savefig("%s.pdf" % task_name, bbox_inches='tight')
+        plt.savefig("%s.png" % task_name, bbox_inches='tight')
     if ptype == "errorbars_stabled":    # errorbars stapled
         legends = []
         bottoms = [0] * len(x)
@@ -78,6 +81,7 @@ for task_name, task_data in data.items():
         plt.legend(legends, loc="best")
         plt.xlabel(heading)
         plt.savefig("%s.pdf" % task_name, bbox_inches='tight')
+        plt.savefig("%s.png" % task_name, bbox_inches='tight')
     if ptype == "errorbars":    # single errorbars
         for name in sorted(subfigures):
             min_values = y["%s_%s" % (name, 'min')]
@@ -93,4 +97,5 @@ for task_name, task_data in data.items():
             plt.legend([caption], loc="best")
             plt.xlabel(heading)
             plt.savefig("%s_%s.pdf" % (task_name, name), bbox_inches='tight')
+            plt.savefig("%s_%s.png" % (task_name, name), bbox_inches='tight')
 

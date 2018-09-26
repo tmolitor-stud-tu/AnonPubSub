@@ -376,6 +376,8 @@ for task_name, _task in tasks.items():
         # save results
         all_results[task_name]["results"] = all_results[task_name]["results"] if "results" in all_results[task_name] else {}
         all_results[task_name]["captions"] = task["captions"] if "captions" in task else {}
+        if "plot_type" in task:
+            all_results[task_name]["plot_type"] = task["plot_type"]
         if "iterate" in task:
             all_results[task_name]["results"]["%s = %s" % (str(task["iterate"]["setting"]), str(iterator_value))] = output
         else:
