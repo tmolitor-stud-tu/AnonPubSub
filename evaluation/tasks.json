@@ -46,6 +46,13 @@
 			"Gossiping": {
 				"INITIAL_TTL": 60,
 				"GOSSIPING_PEERS": 2
+			},
+			"Simple": {
+				"ANONYMOUS_IDS": true,
+				"MAX_HASHES": 1000,
+				"REFLOOD_DELAY": 4.0,
+				"PROBABILISTIC_FORWARDING_FRACTION": 0,
+				"AGGRESSIVE_REFLOODING": false
 			}
 		}
 	},
@@ -58,6 +65,36 @@
 		"rounds": 15
 	},
 	"tasks": {
+		"test": {
+			"runtime": 10,
+			"nodes": 10,
+			"publishers": 2,
+			"subscribers": 3,
+			"router": "Simple",
+			"init": {
+				"overlay_construction": []
+			},
+			"output": {
+				"overlay_construction_time_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_time_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_time_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"successful_overlay_constructions_min": "len(evaluation.overlay_construction)",
+				"successful_overlay_constructions_max": "len(evaluation.overlay_construction)",
+				"successful_overlay_constructions_avg": "len(evaluation.overlay_construction)"
+			},
+			"reduce": {
+				"overlay_construction_time_min": "numpy.mean([x for x in valuelist if isinstance(x, float)])",
+				"overlay_construction_time_max": "numpy.mean([x for x in valuelist if isinstance(x, float)])",
+				"overlay_construction_time_avg": "numpy.mean([x for x in valuelist if isinstance(x, float)])",
+				"successful_overlay_constructions_min": "min(valuelist)",
+				"successful_overlay_constructions_max": "max(valuelist)",
+				"successful_overlay_constructions_avg": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"overlay_construction_time": "Overlay Aufbau in Sekunden",
+				"successful_overlay_constructions": "Erfolgreich verbundene Subscriber"
+			}
+		},
 		"flooding_suboptimal_paths": {
 			"runtime": 30,
 			"router": "Flooding",

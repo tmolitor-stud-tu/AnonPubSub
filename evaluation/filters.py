@@ -8,14 +8,6 @@ class Filters(Base):
         # init parent class
         super().__init__(logger)
         
-        # nice_colors:
-        self.colors = {
-            "red": (255,0,0),
-            "green": (0,255,0),
-            "blue": (0,0,255),
-            "white": (255,255,255)
-        }
-        
         # some imports needed later
         self.random = __import__("random")
         self.base64 = __import__("base64")
@@ -58,7 +50,7 @@ class Filters(Base):
     
     def covert_msg_incoming(self, msg, con):
         global task
-        if msg.get_type() == "Flooding_advertise" and not msg["reflood"] and task["name"] in ["test", "flooding_suboptimal_paths"]:
+        if msg.get_type() == "Flooding_advertise" and not msg["reflood"] and task["name"] in ["flooding_suboptimal_paths"]:
             channel = msg["channel"]
             nonce = self.base64.b64decode(bytes(msg["nonce"], "ascii"))    # decode nonce
             peer_id = con.get_peer_id()
@@ -82,7 +74,7 @@ class Filters(Base):
     def covert_msg_outgoing(self, msg, con):
         global task
         # only check first advertisements
-        if msg.get_type() == "Flooding_advertise" and not msg["reflood"] and task["name"] in ["test", "flooding_master_count"]:
+        if msg.get_type() == "Flooding_advertise" and not msg["reflood"] and task["name"] in ["flooding_master_count"]:
             channel = msg["channel"]
             nonce = self.base64.b64decode(bytes(msg["nonce"], "ascii"))     # decode nonce
             peer_id = con.get_peer_id()
@@ -107,9 +99,11 @@ class Filters(Base):
             "simple_overlay_construction_packetloss",
         ]:
             if msg["channel"] in self.router.subscriptions and msg["id"] not in self.router.seen_data_ids:      # only check subscriber perspective
+                self.logger.info("*********** DEBUG_DATA: received new data")
                 if msg["data"] not in self.data_received:
                     self.data_received[msg["data"]] = 0
                 self.data_received[msg["data"]] += 1
+                self.logger.info("*********** DEBUG_DATA: data_received[%s] --> %s" % (str(msg["data"]), str(self.data_received[msg["data"]])))
                 if self.data_received[msg["data"]] == task["publishers"] and not self.overlay_constructed:
                     self.logger.error("*********** CODE_EVENT(overlay_constructed): overlay_construction.append(%.3f)" % (self.time.time() - self.started))
                     self.logger.info("*********** DEBUG_DATA: node_id = %s" % self.router.node_id)

@@ -34,8 +34,8 @@ class Simple(Router, ProbabilisticForwardingMixin, CoverTrafficMixin):
         "ANONYMOUS_IDS": True,
         "MAX_HASHES": 1000,         # this limits the maximum diameter of the underlay to this value
         "REFLOOD_DELAY": 4.0,
-        "PROBABILISTIC_FORWARDING_FRACTION": 0.10,      # probability of neighbor selection to select for probabilistic forwarding
-        "AGGRESSIVE_REFLOODING": True,
+        "PROBABILISTIC_FORWARDING_FRACTION": 0,      # probability of neighbor selection to select for probabilistic forwarding
+        "AGGRESSIVE_REFLOODING": False,
     }
     
     def __init__(self, node_id, queue):
