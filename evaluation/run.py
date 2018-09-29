@@ -129,7 +129,7 @@ def evaluate(task, settings, standard_imports, args):
     base_ip = str(task["base_ip"]).split(".")
     G = genGraph("random", task["nodes"], **task["graph_args"])
     pubs, subs = task["publishers"], task["subscribers"]
-    for n in G.nodes():
+    for n in sorted(list(G.nodes())):
         roles = {}
         if subs:
             roles["subscriber"] = ["test"]
