@@ -21,6 +21,7 @@ import copy
 import logging
 import logging.config
 import argparse
+import select
 
 
 # some convenience functions
@@ -68,9 +69,10 @@ def genGraph(net, n, con=3, avgdegree=4, dim=2, threshold=0.1):
 
     return G
 
-def download_file(url):
+def open_url(url):
     global logger
     req = urllib2.Request(url)
+    req.add_header("Cache-Control", "no-cache")
     return urllib2.urlopen(req)
 
 def post_data(url, data):
@@ -112,9 +114,13 @@ def extract_data(task, standard_imports, logfile="logs/full.log"):
                 raise
     return Struct(evaluation)
 
+def handle_sse(stream, ip):
+    stream.readline
+
 # generate randomly connected graph and add ip addresses and roles as configured
 def evaluate(task, settings, standard_imports, args):
     global logger
+    
     logger.info("******** Creating graph with %d nodes (%d publishers and %d subscribers)..." % (
         task["nodes"],
         task["publishers"],
@@ -133,6 +139,11 @@ def evaluate(task, settings, standard_imports, args):
             pubs = pubs - 1
         G.node[n] = {"ip": "%d.%d.%d.%d" % (int(base_ip[0]), int(base_ip[1]), int(base_ip[2]), (int(base_ip[3])+n)), "roles": roles}    
         nx.relabel_nodes(G, {n: "ID: %d" % n}, False)
+    if subs or pubs:
+        logger.warning("******** Too few nodes (created only %d publishers and %d subscribers)..." % (
+            task["publishers"] - pubs,
+            task["subscribers"] - subs
+        ))
 
     # start nodes (cleanup on sigint (CTRL-C) while nodes are running)
     def sigint_handler(sig, frame):
@@ -153,14 +164,15 @@ def evaluate(task, settings, standard_imports, args):
     with open("logs/graph.json", "w") as f:
         f.write(graph_data)
 
-    logger.info("******** Checking for availability of all nodes...")
+    logger.info("******** Checking for availability of all nodes and opening their SSE streams...")
+    sse_streams = {}
     for n in sorted(list(G.nodes())):
         ip = G.node[n]["ip"]
         online = False
         for i in range(1, 30):
             try:
                 logger.debug("************ Try %d for node '%s' (%s)..." % (i, n, ip))
-                download_file("http://%s:9980/" % ip)
+                stream = open_url("http://%s:9980/events" % ip)
                 online = True
                 break
             except:
@@ -168,8 +180,10 @@ def evaluate(task, settings, standard_imports, args):
                 continue
         if not online:
             logger.info("************ Node '%s' (%s) does not come online, aborting!" % (n, ip))
+            subprocess.call(["./helpers.sh", "stop"])
             sys.exit(1)
         logger.debug("************ Node '%s' (%s) is online..." % (n, ip))
+        sse_streams[stream] = ip
         send_command(ip, "stop")
 
     logger.info("******** Configuring node filters (%s)..." % args.filters)
@@ -197,6 +211,19 @@ def evaluate(task, settings, standard_imports, args):
                 send_command(G.node[n]["ip"], role_to_command[roletype], {"channel": channel})
 
     logger.info("******** Waiting at most %.3f seconds for routers doing their work..." % task["runtime"])
+    #timeout = time.time() + task["runtime"]
+    #while time.time() < timeout:
+        #(ready_to_read, _, exceptions_list) = select.select(list(sse_streams.keys()), [], list(sse_streams.keys()), 1.0)
+        #for entry in exceptions_list:
+            #ip = sse_streams[entry]
+            #logger.warning("Node %s had an error, ignoring this node now..." % str(ip))
+            #del sse_streams[entry]
+        #for entry in ready_to_read:
+            #ip = sse_streams[entry]
+            #events = handle_sse(entry, ip)
+            #for e in events:
+                #logger.error(str(e))
+    
     time.sleep(task["runtime"])
 
     logger.info("******** Stopping routers and killing nodes...")

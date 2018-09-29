@@ -99,7 +99,6 @@ class Filters(Base):
             "simple_overlay_construction_packetloss",
         ]:
             if msg["channel"] in self.router.subscriptions and msg["id"] not in self.router.seen_data_ids:      # only check subscriber perspective
-                self.logger.info("*********** DEBUG_DATA: received new data")
                 if msg["data"] not in self.data_received:
                     self.data_received[msg["data"]] = 0
                 self.data_received[msg["data"]] += 1
