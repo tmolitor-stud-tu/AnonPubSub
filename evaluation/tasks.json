@@ -230,7 +230,7 @@
 			}
 		},
 		"simple_overlay_construction": {
-			"runtime": 90,
+			"runtime": 120,
 			"router": "Simple",
 			"init": {
 				"overlay_construction": []
