@@ -284,7 +284,7 @@ all_results = {}
 to_run = list(tasks.keys())
 if args.run and args.run != "*":
     to_run = str(args.run).split(",")
-else
+else:
     to_run = list(tasks.keys())
 for task_name in tasks.keys():
     if task_name not in to_run:
