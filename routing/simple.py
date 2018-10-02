@@ -94,15 +94,20 @@ class Simple(Router, ProbabilisticForwardingMixin, CoverTrafficMixin):
         if chain:
             if nonce not in self.advertisement_routing_table[channel][chain]:
                 self.advertisement_routing_table[channel][chain][nonce] = set()
-            self.advertisement_routing_table[channel][chain][nonce].add(peer_id)
-            if self.advertisement_routing_table[channel][chain].peekitem(0)[0] == nonce:
-                logger.debug("%s: Added %s nonce %s to chain %s" % (
-                    channel, "shorter", str(base64.b64encode(nonce), "ascii"), str(base64.b64encode(chain), "ascii")))
-                return ("shorter", chain)   # hash chain of nonce was already in routing table but we now found a shorter path
-            else:
-                logger.debug("%s: Added %s nonce %s to chain %s" % (
-                    channel, "longer", str(base64.b64encode(nonce), "ascii"), str(base64.b64encode(chain), "ascii")))
-                return ("longer", chain)    # hash chain of nonce was already in routing table and it remains the shortest path
+                self.advertisement_routing_table[channel][chain][nonce].add(peer_id)
+                if self.advertisement_routing_table[channel][chain].peekitem(0)[0] == nonce:
+                    logger.debug("%s: Added %s nonce %s to chain %s" % (
+                        channel, "shorter", str(base64.b64encode(nonce), "ascii"), str(base64.b64encode(chain), "ascii")))
+                    return ("shorter", chain)   # hash chain of nonce was already in routing table but we now found a shorter path
+            else:       # this nonce was already received (via another peer) --> this path can be equal to the already known shortest one or longer
+                self.advertisement_routing_table[channel][chain][nonce].add(peer_id)
+                if self.advertisement_routing_table[channel][chain].peekitem(0)[0] == nonce:
+                    logger.debug("%s: Added %s nonce %s to chain %s" % (
+                        channel, "equal", str(base64.b64encode(nonce), "ascii"), str(base64.b64encode(chain), "ascii")))
+                    return ("equal", chain)   # hash chain of nonce was already in routing table and we now found an equal length path
+            logger.debug("%s: Added %s nonce %s to chain %s" % (
+                channel, "longer", str(base64.b64encode(nonce), "ascii"), str(base64.b64encode(chain), "ascii")))
+            return ("longer", chain)    # hash chain of nonce was already in routing table and it remains the shortest path
         else:
             chain = nonce
             self.advertisement_routing_table[channel][chain] = SortedDict(functools.cmp_to_key(self._compare_nonces), {nonce: set([peer_id])})
@@ -164,8 +169,8 @@ class Simple(Router, ProbabilisticForwardingMixin, CoverTrafficMixin):
             return
         
         # abort flooding if we already know a shorter path
-        if ordering == "longer":
-            logger.debug("This path was longer, aborting advertise (re)flooding...")
+        if ordering == "longer" or ordering == "equal":
+            logger.debug("This path was longer or equal, aborting advertise (re)flooding...")
             return
         
         # encode nonce again and update message with this new nonce
