@@ -3,8 +3,8 @@
 		"networking": {
 			"Connection": {
 			"MAX_COVERT_PAYLOAD": 16384,
-			"PING_INTERVAL": 0.5,
-			"MAX_MISSING_PINGS": 8,
+			"PING_INTERVAL": 0.1,
+			"MAX_MISSING_PINGS": 20,
 			"MAX_RECONNECTS": 3,
 			"PACKET_LOSS": 0,
 			"ENCRYPT_PACKETS": false
@@ -113,6 +113,10 @@
 			"reduce": {
 				"shorter_subscribers": "numpy.mean(valuelist)",
 				"shorter_intermediates": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"shorter_subscribers": "Suboptimale Pfade am Subscriber",
+				"shorter_intermediates": "Suboptimale Pfade an einem Forwarder"
 			}
 		},
 		"flooding_suboptimal_paths_5": {
@@ -134,6 +138,10 @@
 			"reduce": {
 				"shorter_subscribers": "numpy.mean(valuelist)",
 				"shorter_intermediates": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"shorter_subscribers": "Suboptimale Pfade am Subscriber",
+				"shorter_intermediates": "Suboptimale Pfade an einem Forwarder"
 			}
 		},
 		"flooding_master_count": {
@@ -156,6 +164,10 @@
 			"reduce": {
 				"master_publishers": "numpy.mean(valuelist)",
 				"slave_publishers": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"master_publishers": "Master Pulisher",
+				"slave_publishers": "Slave Publisher"
 			}
 		},
 		"flooding_master_count_5": {
@@ -179,6 +191,10 @@
 			"reduce": {
 				"master_publishers": "numpy.mean(valuelist)",
 				"slave_publishers": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"master_publishers": "Master Pulisher",
+				"slave_publishers": "Slave Publisher"
 			}
 		},
 		"flooding_overlay_construction": {
@@ -193,14 +209,51 @@
 				"overlay_construction": []
 			},
 			"output": {
-				"overlay_construction_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
-				"overlay_construction_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
-				"overlay_construction_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)"
+				"overlay_construction_time_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_time_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_time_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"successful_overlay_constructions_min": "len(evaluation.overlay_construction)",
+				"successful_overlay_constructions_max": "len(evaluation.overlay_construction)",
+				"successful_overlay_constructions_avg": "len(evaluation.overlay_construction)"
 			},
 			"reduce": {
-				"overlay_construction_min": "numpy.mean(valuelist)",
-				"overlay_construction_max": "numpy.mean(valuelist)",
-				"overlay_construction_avg": "numpy.mean(valuelist)"
+				"overlay_construction_time_min": "numpy.mean([x for x in valuelist if isinstance(x, float)])",
+				"overlay_construction_time_max": "numpy.mean([x for x in valuelist if isinstance(x, float)])",
+				"overlay_construction_time_avg": "numpy.mean([x for x in valuelist if isinstance(x, float)])",
+				"successful_overlay_constructions_min": "min(valuelist)",
+				"successful_overlay_constructions_max": "max(valuelist)",
+				"successful_overlay_constructions_avg": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"overlay_construction_time": "Overlay Aufbau in Sekunden",
+				"successful_overlay_constructions": "Erfolgreich verbundene Subscriber"
+			}
+		},
+		"simple_overlay_construction": {
+			"runtime": 90,
+			"router": "Simple",
+			"init": {
+				"overlay_construction": []
+			},
+			"output": {
+				"overlay_construction_time_min": "min(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_time_max": "max(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"overlay_construction_time_avg": "numpy.mean(evaluation.overlay_construction) if len(evaluation.overlay_construction) == task['subscribers'] else 'only %d successfull connects' % len(evaluation.overlay_construction)",
+				"successful_overlay_constructions_min": "len(evaluation.overlay_construction)",
+				"successful_overlay_constructions_max": "len(evaluation.overlay_construction)",
+				"successful_overlay_constructions_avg": "len(evaluation.overlay_construction)"
+			},
+			"reduce": {
+				"overlay_construction_time_min": "numpy.mean([x for x in valuelist if isinstance(x, float)])",
+				"overlay_construction_time_max": "numpy.mean([x for x in valuelist if isinstance(x, float)])",
+				"overlay_construction_time_avg": "numpy.mean([x for x in valuelist if isinstance(x, float)])",
+				"successful_overlay_constructions_min": "min(valuelist)",
+				"successful_overlay_constructions_max": "max(valuelist)",
+				"successful_overlay_constructions_avg": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"overlay_construction_time": "Overlay Aufbau in Sekunden",
+				"successful_overlay_constructions": "Erfolgreich verbundene Subscriber"
 			}
 		},
 		"aco_overlay_construction": {
@@ -228,6 +281,10 @@
 				"successful_overlay_constructions_min": "min(valuelist)",
 				"successful_overlay_constructions_max": "max(valuelist)",
 				"successful_overlay_constructions_avg": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"overlay_construction_time": "Overlay Aufbau in Sekunden",
+				"successful_overlay_constructions": "Erfolgreich verbundene Subscriber"
 			}
 		},
 		"aco_overlay_construction_bandwidth": {
@@ -255,6 +312,10 @@
 				"successful_overlay_constructions_min": "min(valuelist)",
 				"successful_overlay_constructions_max": "max(valuelist)",
 				"successful_overlay_constructions_avg": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"overlay_construction_time": "Overlay Aufbau in Sekunden",
+				"successful_overlay_constructions": "Erfolgreich verbundene Subscriber"
 			}
 		},
 		"all_reconnects_on_packetloss": {
@@ -276,6 +337,9 @@
 				"reconnects_min": "numpy.mean(valuelist)",
 				"reconnects_max": "numpy.mean(valuelist)",
 				"reconnects_avg": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"reconnects": "Verbindungsversuche"
 			}
 		},
 		"flooding_overlay_construction_packetloss": {
@@ -334,6 +398,10 @@
 				"successful_overlay_constructions_min": "min(valuelist)",
 				"successful_overlay_constructions_max": "max(valuelist)",
 				"successful_overlay_constructions_avg": "numpy.mean(valuelist)"
+			},
+			"captions": {
+				"overlay_construction_time": "Overlay Aufbau in Sekunden",
+				"successful_overlay_constructions": "Erfolgreich verbundene Subscriber"
 			}
 		},
 		"simple_overlay_construction_packetloss": {
