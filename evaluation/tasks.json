@@ -3,8 +3,8 @@
 		"networking": {
 			"Connection": {
 			"MAX_COVERT_PAYLOAD": 16384,
-			"PING_INTERVAL": 0.1,
-			"MAX_MISSING_PINGS": 20,
+			"PING_INTERVAL": 0.5,
+			"MAX_MISSING_PINGS": 8,
 			"MAX_RECONNECTS": 3,
 			"PACKET_LOSS": 0,
 			"ENCRYPT_PACKETS": false
@@ -337,7 +337,7 @@
 			}
 		},
 		"simple_overlay_construction_packetloss": {
-			"runtime": 60,
+			"runtime": 90,
 			"router": "Simple",
 			"iterate": {
 				"setting": "networking.Connection.PACKET_LOSS",

@@ -15,7 +15,7 @@ class ProbabilisticForwardingMixin(object):
         self.__known_trees = set()
     
     def __configure(self, probabilistic_forwarding_fraction):
-        logger.info("Probabilistic forwarding probability: %.3f" % probabilistic_forwarding_fraction)
+        logger.info("Probabilistic forwarding probability: %.2f" % probabilistic_forwarding_fraction)
         self.__probability = probabilistic_forwarding_fraction
     
     def __dump_state(self):
