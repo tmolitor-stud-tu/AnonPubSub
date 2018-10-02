@@ -96,6 +96,7 @@ class Filters(Base):
             "aco_overlay_construction_bandwidth",
             "flooding_overlay_construction_packetloss",
             "aco_overlay_construction_packetloss",
+            "simple_overlay_construction",
             "simple_overlay_construction_packetloss",
         ]:
             if msg["channel"] in self.router.subscriptions and msg["id"] not in self.router.seen_data_ids:      # only check subscriber perspective
