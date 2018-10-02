@@ -12,16 +12,15 @@ except:
     import json
 import random
 import subprocess
-import numpy
 import os
 import re
 import signal
-from functools import reduce
 import copy
 import logging
 import logging.config
 import argparse
 import select
+import importlib
 
 
 # some convenience functions
@@ -78,6 +77,7 @@ def open_url(url):
 def post_data(url, data):
     global logger
     req = urllib2.Request(url, data)
+    req.add_header("Cache-Control", "no-cache")
     req.add_header("Content-Type",'application/json')
     return urllib2.urlopen(req)
 
@@ -94,7 +94,7 @@ def send_command(ip, command, data=None, ignore_errors=False):
         subprocess.call(["./helpers.sh", "stop"])       # kill all running nodes before raising the exception
         raise
 
-def extract_data(task, standard_imports, logfile="logs/full.log"):
+def extract_data(task, task_imports, logfile="logs/full.log"):
     code_pattern = re.compile("^.*\*\*\*\*\*\*\*\*\*\*\* CODE_EVENT\((?P<event>[^)]*)\): (?P<code>.*)$")
     # evaluate log output and return result
     logger.info("******** Parsing log output...")
@@ -108,7 +108,7 @@ def extract_data(task, standard_imports, logfile="logs/full.log"):
             event = match.group('event')
             code = match.group('code')
             try:
-                exec(code, {}.update(standard_imports), evaluation)
+                exec(code, {}.update(task_imports), evaluation)
             except BaseException as e:
                 logger.error("******** Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), code))
                 raise
@@ -118,7 +118,7 @@ def handle_sse(stream, ip):
     stream.readline
 
 # generate randomly connected graph and add ip addresses and roles as configured
-def evaluate(task, settings, standard_imports, args):
+def evaluate(task, settings, task_imports, args):
     global logger
     
     logger.info("******** Creating graph with %d nodes (%d publishers and %d subscribers)..." % (
@@ -144,7 +144,14 @@ def evaluate(task, settings, standard_imports, args):
             task["publishers"] - pubs,
             task["subscribers"] - subs
         ))
-
+    
+    # create json string from graph
+    G.graph["settings"] = settings
+    node_link_data = json_graph.node_link_data(G)
+    graph_data = json.dumps(node_link_data, sort_keys=True, indent=4)
+    with open("logs/graph.json", "w") as f:
+        f.write(graph_data)
+    
     # start nodes (cleanup on sigint (CTRL-C) while nodes are running)
     def sigint_handler(sig, frame):
         signal.signal(signal.SIGINT, signal.SIG_IGN) # ignore SIGINT while shutting down
@@ -156,13 +163,6 @@ def evaluate(task, settings, standard_imports, args):
     for n in sorted(list(G.nodes())):
         ips.append(G.node[n]["ip"])
     subprocess.run(["./helpers.sh", "start"], input=bytes("%s\n" % ("\n".join(ips)), "UTF-8"))
-
-    # create json string from graph
-    G.graph["settings"] = settings
-    node_link_data = json_graph.node_link_data(G)
-    graph_data = json.dumps(node_link_data, sort_keys=True, indent=4)
-    with open("logs/graph.json", "w") as f:
-        f.write(graph_data)
 
     logger.info("******** Checking for availability of all nodes and opening their SSE streams...")
     sse_streams = {}
@@ -233,7 +233,7 @@ def evaluate(task, settings, standard_imports, args):
     subprocess.call(["./helpers.sh", "stop"])
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     
-    return extract_data(task, standard_imports)
+    return extract_data(task, task_imports)
 
 def update_settings(settings, setting, value):
     global logger
@@ -275,36 +275,47 @@ logger.info("Loading tasks description file '%s'..." % args.tasks)
 with open(args.tasks, "r") as f:
     tasks_json = json.load(f)
     global_settings = tasks_json["settings"]
-    task_defaults = tasks_json["task_defaults"]
+    global_defaults = tasks_json["global_defaults"]
+    global_named_defaults = tasks_json["named_defaults"]
     tasks = tasks_json["tasks"]
 
 # execute evaluation tasks
 all_results = {}
-standard_imports = {
-    "numpy": numpy,
-    "random": random,
-    "reduce": reduce    # map and filter are standard, reduce has to be imported
-}
 to_run = list(tasks.keys())
 if args.run and args.run != "*":
     to_run = str(args.run).split(",")
-for task_name, _task in tasks.items():
+else
+    to_run = list(tasks.keys())
+for task_name in tasks.keys():
     if task_name not in to_run:
         logger.info("Ignoring task '%s' (requested on commandline)..." % task_name)
-        continue
-    
+for task_name in to_run:
+    logger.info("Loading task '%s'..." % task_name)
     # build task dict
-    task = {"name": task_name}
-    task.update(task_defaults)
-    task.update(_task)
-    if "graph_args" not in task or not task["graph_args"]:
-        task["graph_args"] = {}
-    if "reduce" not in task or not task["reduce"]:
-        task["reduce"] = {}
+    task = {"name": task_name, "graph_args": {}, "reduce": {}}      # default values
+    task.update(global_defaults)            # add global defaults from taskfile ("global_defaults")
+    if "defaults" in tasks[task_name]:      # add task local defaults from taskfile ("named_defaults" dict)
+        for parent in tasks[task_name]["defaults"]:
+            if parent in global_named_defaults and isinstance(global_named_defaults[parent], dict):
+                task.update(global_named_defaults[parent])
+            else:
+                logger.warning("Task '%s' tried to import named_default '%s': not existent or no dict")
+    task.update(tasks[task_name])           # add task local settings
     
-    if "output" not in _task or not len(task["output"]):
-        logger.info("Ignoring task '%s' (no output defined)..." % task_name)
+    # ignore tasks without output definition (legacy)
+    if "output" not in task or not len(task["output"]):
+        logger.warning("Ignoring task '%s' (no output defined)..." % task_name)
         continue
+    
+    # import modules specified in task
+    task_imports = {}
+    if "imports" in task:
+        for name, definition in task["imports"].items():
+            try:
+                task_imports[name] = importlib.import_module(definition[0], None if len(definition)<2 else definition[1])
+            except BaseException as e:
+                logger.error("Exception %s: %s while importing %s --> %s!" % (str(e.__class__.__name__), str(e), str(definition), str(name)))
+                raise
     
     logger.info("Executing task '%s'..." % task_name)
     all_results[task_name] = {}
@@ -321,7 +332,7 @@ for task_name, _task in tasks.items():
     if "iterate" in task and task["iterate"]:
         loc = {}
         try:
-            exec("iterator = %s" % task["iterate"]["iterator"], {}.update(standard_imports), loc)
+            exec("iterator = %s" % task["iterate"]["iterator"], {}.update(task_imports), loc)
         except BaseException as e:
             logger.error("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "iterator = %s" % task["iterate"]["iterator"]))
             raise
@@ -347,14 +358,14 @@ for task_name, _task in tasks.items():
             archive_dir = "logs.%s%s.r%d" % (task_name, (".i%d" % (iterator_counter+1) if "iterate" in task and task["iterate"] else ""), (round_num+1))
             if not args.extract:        # evaluate graph
                 logger.info("**** Beginning evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
-                evaluation = evaluate(task, settings, standard_imports, args)
+                evaluation = evaluate(task, settings, task_imports, args)
                 # save tasks file for later reuse
                 with open("logs/tasks.json", "w") as f:
                     json.dump(tasks_json, f, sort_keys=True, indent=4)
                 os.rename("logs", archive_dir)
             else:                       # extract evaluation data from already created logfiles
                 logger.info("**** Extracting evaluation round %d/%d..." % (round_num + 1, int(task["rounds"])))
-                evaluation = extract_data(task, standard_imports, logfile="%s/full.log" % archive_dir)
+                evaluation = extract_data(task, task_imports, logfile="%s/full.log" % archive_dir)
             #logger.info("**** EVALUATION: %s" % str(evaluation))
             
             # generate round output vars from raw evaluation input via code in taskfile
@@ -363,14 +374,14 @@ for task_name, _task in tasks.items():
                     output[var] = []
                 result = {}
                 try:
-                    exec("%s = %s" % (var, code), {
+                    exec("%s = %s" % (var, code), {}.update(task_imports).update({
                         "task": task,
                         "settings": settings,
                         "round_num": round_num,
                         "iterator_counter": iterator_counter,
                         "iterator_value": iterator_value,
                         "evaluation": evaluation
-                    }.update(standard_imports), result)
+                    }), result)
                     #logger.info("**** OUTPUT RESULT: %s" % str(result))
                 except BaseException as e:
                     logger.error("**** Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "%s = %s" % (var, code)))
@@ -384,12 +395,12 @@ for task_name, _task in tasks.items():
                 try:
                     result = {}
                     try:
-                        exec("reduce_func = (lambda valuelist: %s)" % task["reduce"][var], {
+                        exec("reduce_func = (lambda valuelist: %s)" % task["reduce"][var], {}.update(task_imports).update({
                             "task": task,
                             "settings": settings,
                             "iterator_counter": iterator_counter,
                             "iterator_value": iterator_value
-                        }.update(standard_imports), result)
+                        }), result)
                     except BaseException as e:
                         logger.warning("**** Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "reduce_func = %s" % code))
                         raise
