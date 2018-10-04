@@ -15,7 +15,6 @@ import subprocess
 import os
 import re
 import signal
-import copy
 import logging
 import logging.config
 import argparse
@@ -103,7 +102,8 @@ def extract_data(task, task_imports, logfile="logs/full.log"):
     code_pattern = re.compile("^.*\*\*\*\*\*\*\*\*\*\*\* CODE_EVENT\((?P<event>[^)]*)\): (?P<code>.*)$")
     # evaluate log output and return result
     logger.info("******** Parsing log output...")
-    evaluation = merge_dicts(task["init"])
+    # without deepcopy old values would be retained
+    evaluation = copy.deepcopy(task["init"])
     with open(logfile, "r") as f:
         for line in f:
             match = code_pattern.search(line)
@@ -112,7 +112,7 @@ def extract_data(task, task_imports, logfile="logs/full.log"):
             event = match.group('event')
             code = match.group('code')
             try:
-                exec(code, merge_dicts(task_imports), evaluation)
+                exec(code, task_imports, evaluation)
             except BaseException as e:
                 logger.error("******** Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), code))
                 raise
@@ -333,15 +333,15 @@ for task_name in to_run:
     
     # build settings dict
     settings = {}
-    settings.update(global_settings)
-    settings.update(task["settings"] if "settings" in task and task["settings"] else {})
+    settings.update(copy.deepcopy(global_settings))
+    settings.update(copy.deepcopy(task["settings"] if "settings" in task and task["settings"] else {}))
     
     # interprete iterator if given
     iterator = [""]       # dummy iterator having only one entry
     if "iterate" in task and task["iterate"]:
         loc = {}
         try:
-            exec("iterator = %s" % task["iterate"]["iterator"], merge_dicts(task_imports), loc)
+            exec("iterator = %s" % task["iterate"]["iterator"], task_imports, loc)
         except BaseException as e:
             logger.error("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "iterator = %s" % task["iterate"]["iterator"]))
             raise
@@ -361,7 +361,7 @@ for task_name in to_run:
             ))
             update_settings(settings, task["iterate"]["setting"], iterator_value)
         
-        # collect evaluation outcome for this task iteration averaged over task["rounds"]
+        # collect evaluation outcome for this task iteration using the rules in task["output"]
         output = {}
         for round_num in range(int(task["rounds"])):
             archive_dir = "logs.%s%s.r%d" % (task_name, (".i%d" % (iterator_counter+1) if "iterate" in task and task["iterate"] else ""), (round_num+1))

@@ -180,7 +180,7 @@
 			"defaults": ["overlay_construction"]
 		},
 		"simple_overlay_construction": {
-			"runtime": 120,
+			"runtime": 240,
 			"router": "Simple",
 			"defaults": ["overlay_construction"]
 		},
