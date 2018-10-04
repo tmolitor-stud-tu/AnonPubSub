@@ -289,8 +289,8 @@ with open(args.tasks, "r") as f:
 # execute evaluation tasks
 all_results = {}
 to_run = list(tasks.keys())
-if args.run and args.run != "*":
-    to_run = str(args.run).split(",")
+if args.run and len(args.run):
+    to_run = args.run
 else:
     to_run = list(tasks.keys())
 for task_name in tasks.keys():
