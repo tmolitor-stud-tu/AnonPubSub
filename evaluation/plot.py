@@ -2,14 +2,40 @@
 import json
 import numpy
 import matplotlib.pyplot as plt
+import logging
+import logging.config
+import argparse
 
 
-with open("results.json", "r") as f:
+parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Evaluation plotter.")
+parser.add_argument("-r", "--results", metavar='RESULTS_FILE', help="Results file to load", default="results.json")
+parser.add_argument("-f", "--format", metavar="FORMAT", help="Plot data in this format. All mathplotlib formats are supported, default: 'png'", default=[], action="append")
+parser.add_argument("-l", "--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
+args = parser.parse_args()
+if not len(args.format):
+    args.format = ["png"]
+
+with open("logger.json", 'r') as logging_configuration_file:
+    logger_config=json.load(logging_configuration_file)
+logger_config["handlers"]["stderr"]["level"] = args.log
+logging.config.dictConfig(logger_config)
+logger = logging.getLogger()
+logger.info('Logger configured...')
+
+def write_plot(plt, formats, task_name, name=None):
+    for fmt in formats:
+        filename = "%s%s.%s" % (task_name, "_%s" % name if name else "", fmt)
+        logger.info("Writing '%s'..." % filename)
+        plt.savefig(filename, bbox_inches='tight')
+
+
+logger.info("Loading '%s'..." % args.results)
+with open(args.results, "r") as f:
 	data = json.load(f)
 
-print("Plotting tasks data...")
+logger.info("Plotting '%s'..." % args.results)
 for task_name, task_data in data.items():
-    print("task: %s" % task_name)
+    logger.info("Plotting task: '%s'" % task_name)
     
     # old style results without captions
     if "results" not in task_data:
@@ -47,23 +73,22 @@ for task_name, task_data in data.items():
     # plot graph
     plt.figure()
     if ptype == "normal":       # normal line based
-        args = []
+        plot_args = []
         legends = []
         for name in sorted(subfigures):
             # sort lists by x_values together (see: https://stackoverflow.com/a/13668413/3528174)
             x_values, y_values = [list(x) for x in zip(*sorted(zip(x, y[name]), key=lambda pair: pair[0]))]
             legends.append(task_data["captions"][name] if name in task_data["captions"] else name)
-            args.append(x_values)
-            args.append(y_values)
-            args.append("o-")
-        plt.plot(*args)
+            plot_args.append(x_values)
+            plot_args.append(y_values)
+            plot_args.append("o-")
+        plt.plot(*plot_args)
         
         #plt.title(task_name)
         plt.legend(legends, loc="best")
         plt.xlabel(heading)
-        plt.savefig("%s.pdf" % task_name, bbox_inches='tight')
-        plt.savefig("%s.png" % task_name, bbox_inches='tight')
-    if ptype == "errorbars_stabled":    # errorbars stapled
+        write_plot(plt, args.format, task_name)
+    if ptype == "errorbars_stapled":    # errorbars stapled
         legends = []
         bottoms = [0] * len(x)
         for name in sorted(subfigures):
@@ -80,8 +105,7 @@ for task_name, task_data in data.items():
         #plt.title(task_name)
         plt.legend(legends, loc="best")
         plt.xlabel(heading)
-        plt.savefig("%s.pdf" % task_name, bbox_inches='tight')
-        plt.savefig("%s.png" % task_name, bbox_inches='tight')
+        write_plot(plt, args.format, task_name)
     if ptype == "errorbars":    # single errorbars
         for name in sorted(subfigures):
             min_values = y["%s_%s" % (name, 'min')]
@@ -96,6 +120,5 @@ for task_name, task_data in data.items():
             caption = task_data["captions"][name] if name in task_data["captions"] else name
             plt.legend([caption], loc="best")
             plt.xlabel(heading)
-            plt.savefig("%s_%s.pdf" % (task_name, name), bbox_inches='tight')
-            plt.savefig("%s_%s.png" % (task_name, name), bbox_inches='tight')
+            write_plot(plt, args.format, task_name, name)
 

@@ -21,14 +21,18 @@ import logging.config
 import argparse
 import select
 import importlib
+from types import SimpleNamespace
+import shutil
 
 
 # some convenience functions
-class Struct:
-    def __init__(self, d):
-        self.__dict__.update(d)
-    def __str__(self):
-        return str(self.__dict__)
+def merge_dicts(*args):
+    if not len(args):
+        return None
+    retval = {}
+    for arg in args:
+        retval.update(arg)
+    return retval
 
 def genGraph(net, n, con=3, avgdegree=4, dim=2, threshold=0.1):
     global logger
@@ -98,8 +102,7 @@ def extract_data(task, task_imports, logfile="logs/full.log"):
     code_pattern = re.compile("^.*\*\*\*\*\*\*\*\*\*\*\* CODE_EVENT\((?P<event>[^)]*)\): (?P<code>.*)$")
     # evaluate log output and return result
     logger.info("******** Parsing log output...")
-    evaluation = {}
-    evaluation.update(copy.deepcopy(task["init"]))
+    evaluation = merge_dicts(task["init"])
     with open(logfile, "r") as f:
         for line in f:
             match = code_pattern.search(line)
@@ -108,11 +111,11 @@ def extract_data(task, task_imports, logfile="logs/full.log"):
             event = match.group('event')
             code = match.group('code')
             try:
-                exec(code, {}.update(task_imports), evaluation)
+                exec(code, merge_dicts(task_imports), evaluation)
             except BaseException as e:
                 logger.error("******** Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), code))
                 raise
-    return Struct(evaluation)
+    return SimpleNamespace(**evaluation)
 
 def handle_sse(stream, ip):
     stream.readline
@@ -145,6 +148,10 @@ def evaluate(task, settings, task_imports, args):
             task["subscribers"] - subs
         ))
     
+    # remove all old logs
+    shutil.rmtree("logs", ignore_errors=True)
+    os.mkdir("logs")
+
     # create json string from graph
     G.graph["settings"] = settings
     node_link_data = json_graph.node_link_data(G)
@@ -255,11 +262,11 @@ def update_settings(settings, setting, value):
 
 
 # parse commandline
-parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="AnonPubSub node.\nHTTP Control Port: 9980\nNode Communication Port: 9999")
+parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Evaluator for AnonPubSub.\nSee tasks.json for examples of evaluation tasks.")
 parser.add_argument("-t", "--tasks", metavar='TASKS_FILE', help="Tasks description file to load", default="tasks.json")
 parser.add_argument("-f", "--filters", metavar='FILTERS_FILE', help="Filters to load (these provide raw values needed by tasks)", default="filters.py")
-parser.add_argument("-r", "--run", metavar='TASK1,TASK2,...', help="Comma separated list of tasks to run or extract", default="*")
-parser.add_argument("-e", '--extract', help="Don't simulate but only extract raw data from logfiles (make sure your task description hasn't changed since the simulation was run!!)", default=False, action='store_true')
+parser.add_argument("-r", "--run", metavar='TASK', help="List of tasks to run or extract", nargs="+", default="")
+parser.add_argument("-e", '--extract', help="Don't simulate but only extract raw data from logfiles (make sure your task description hasn't changed since the simulation was run!!)", default=False, action="store_true")
 parser.add_argument("-l", "--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
 
@@ -320,7 +327,7 @@ for task_name in to_run:
     logger.info("Executing task '%s'..." % task_name)
     all_results[task_name] = {}
     if not args.extract:
-        subprocess.call("./helpers.sh cleanup logs.%s" % task_name, shell=True)
+        shutil.rmtree("logs.%s" % task_name, ignore_errors=True)
     
     # build settings dict
     settings = {}
@@ -332,7 +339,7 @@ for task_name in to_run:
     if "iterate" in task and task["iterate"]:
         loc = {}
         try:
-            exec("iterator = %s" % task["iterate"]["iterator"], {}.update(task_imports), loc)
+            exec("iterator = %s" % task["iterate"]["iterator"], merge_dicts(task_imports), loc)
         except BaseException as e:
             logger.error("Exception %s: %s while executing code line '%s'!" % (str(e.__class__.__name__), str(e), "iterator = %s" % task["iterate"]["iterator"]))
             raise
@@ -374,7 +381,7 @@ for task_name in to_run:
                     output[var] = []
                 result = {}
                 try:
-                    exec("%s = %s" % (var, code), {}.update(task_imports).update({
+                    exec("%s = %s" % (var, code), merge_dicts(task_imports, {
                         "task": task,
                         "settings": settings,
                         "round_num": round_num,
@@ -395,7 +402,7 @@ for task_name in to_run:
                 try:
                     result = {}
                     try:
-                        exec("reduce_func = (lambda valuelist: %s)" % task["reduce"][var], {}.update(task_imports).update({
+                        exec("reduce_func = (lambda valuelist: %s)" % task["reduce"][var], merge_dicts(task_imports, {
                             "task": task,
                             "settings": settings,
                             "iterator_counter": iterator_counter,

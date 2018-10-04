@@ -25,6 +25,10 @@
 		"": {
 			"level": "DEBUG",
 			"handlers": ["stderr"]
+		},
+		"matplotlib.backends._backend_tk": {
+			"level": "WARN",
+			"handlers": ["stderr"]
 		}
 	}
 }
