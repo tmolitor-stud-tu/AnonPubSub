@@ -23,6 +23,7 @@ import select
 import importlib
 from types import SimpleNamespace
 import shutil
+import glob
 
 
 # some convenience functions
@@ -263,10 +264,10 @@ def update_settings(settings, setting, value):
 
 # parse commandline
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Evaluator for AnonPubSub.\nSee tasks.json for examples of evaluation tasks.")
+parser.add_argument("-e", '--extract', help="Don't simulate but only extract raw data from logfiles\nMake sure your task description hasn't changed since the simulation was run!!", default=False, action="store_true")
+parser.add_argument("-r", "--run", metavar='TASK', help="List of tasks to run or extract", nargs="+", default="")
 parser.add_argument("-t", "--tasks", metavar='TASKS_FILE', help="Tasks description file to load", default="tasks.json")
 parser.add_argument("-f", "--filters", metavar='FILTERS_FILE', help="Filters to load (these provide raw values needed by tasks)", default="filters.py")
-parser.add_argument("-r", "--run", metavar='TASK', help="List of tasks to run or extract", nargs="+", default="")
-parser.add_argument("-e", '--extract', help="Don't simulate but only extract raw data from logfiles (make sure your task description hasn't changed since the simulation was run!!)", default=False, action="store_true")
 parser.add_argument("-l", "--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
 
@@ -327,7 +328,8 @@ for task_name in to_run:
     logger.info("Executing task '%s'..." % task_name)
     all_results[task_name] = {}
     if not args.extract:
-        shutil.rmtree("logs.%s" % task_name, ignore_errors=True)
+        for path in glob.glob("logs.%s*" % task_name):
+            shutil.rmtree(path, ignore_errors=True)
     
     # build settings dict
     settings = {}
