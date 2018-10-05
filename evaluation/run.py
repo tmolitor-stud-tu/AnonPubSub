@@ -266,8 +266,8 @@ def update_settings(settings, setting, value):
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Evaluator for AnonPubSub.\nSee tasks.json for examples of evaluation tasks.")
 parser.add_argument("-e", '--extract', help="Don't simulate but only extract raw data from logfiles\nMake sure your task description hasn't changed since the simulation was run!!", default=False, action="store_true")
 parser.add_argument("-r", "--run", metavar='TASK', help="List of tasks to run or extract", nargs="+", default="")
-parser.add_argument("-t", "--tasks", metavar='TASKS_FILE', help="Tasks description file to load", default="tasks.json")
-parser.add_argument("-f", "--filters", metavar='FILTERS_FILE', help="Filters to load (these provide raw values needed by tasks)", default="filters.py")
+parser.add_argument("-T", "--tasks", metavar='TASKS_FILE', help="Tasks description file to load", default="tasks.json")
+parser.add_argument("-F", "--filters", metavar='FILTERS_FILE', help="Filters to load (these provide raw values needed by tasks)", default="filters.py")
 parser.add_argument("-l", "--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
 

@@ -36,6 +36,43 @@
             "Overlay Aufbau in Sekunden_min": 27.505285714285712
         }
     },
+    "aco_overlay_construction_success": {
+        "routing.ACO.ANT_ROUND_TIME = 1": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "routing.ACO.ANT_ROUND_TIME = 1.5": {
+            "Erfolgreich verbundene Subscriber_avg": 9.333333333333334,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 0
+        },
+        "routing.ACO.ANT_ROUND_TIME = 2": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "routing.ACO.ANT_ROUND_TIME = 2.5": {
+            "Erfolgreich verbundene Subscriber_avg": 9.8,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 7
+        },
+        "routing.ACO.ANT_ROUND_TIME = 3": {
+            "Erfolgreich verbundene Subscriber_avg": 9.933333333333334,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 9
+        },
+        "routing.ACO.ANT_ROUND_TIME = 3.5": {
+            "Erfolgreich verbundene Subscriber_avg": 10.0,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 10
+        },
+        "routing.ACO.ANT_ROUND_TIME = 4": {
+            "Erfolgreich verbundene Subscriber_avg": 9.866666666666667,
+            "Erfolgreich verbundene Subscriber_max": 10,
+            "Erfolgreich verbundene Subscriber_min": 8
+        }
+    },
     "aco_overlay_construction_time_packetloss": {
         "networking.Connection.PACKET_LOSS = 0": {
             "Overlay Aufbau in Sekunden_avg": 15.647866666666664,
@@ -73,7 +110,7 @@
             "Overlay Aufbau in Sekunden_min": 23.354266666666668
         }
     },
-	    "aco_overlay_constructions_packetloss": {
+    "aco_overlay_constructions_packetloss": {
         "networking.Connection.PACKET_LOSS = 0": {
             "Erfolgreich verbundene Subscriber_avg": 10.0,
             "Erfolgreich verbundene Subscriber_max": 10,
@@ -108,43 +145,6 @@
             "Erfolgreich verbundene Subscriber_avg": 10.0,
             "Erfolgreich verbundene Subscriber_max": 10,
             "Erfolgreich verbundene Subscriber_min": 10
-        }
-    },
-    "aco_overlay_construction_success": {
-        "routing.ACO.ANT_ROUND_TIME = 1": {
-            "Erfolgreich verbundene Subscriber_avg": 10.0,
-            "Erfolgreich verbundene Subscriber_max": 10,
-            "Erfolgreich verbundene Subscriber_min": 10
-        },
-        "routing.ACO.ANT_ROUND_TIME = 1.5": {
-            "Erfolgreich verbundene Subscriber_avg": 9.333333333333334,
-            "Erfolgreich verbundene Subscriber_max": 10,
-            "Erfolgreich verbundene Subscriber_min": 0
-        },
-        "routing.ACO.ANT_ROUND_TIME = 2": {
-            "Erfolgreich verbundene Subscriber_avg": 10.0,
-            "Erfolgreich verbundene Subscriber_max": 10,
-            "Erfolgreich verbundene Subscriber_min": 10
-        },
-        "routing.ACO.ANT_ROUND_TIME = 2.5": {
-            "Erfolgreich verbundene Subscriber_avg": 9.8,
-            "Erfolgreich verbundene Subscriber_max": 10,
-            "Erfolgreich verbundene Subscriber_min": 7
-        },
-        "routing.ACO.ANT_ROUND_TIME = 3": {
-            "Erfolgreich verbundene Subscriber_avg": 9.933333333333334,
-            "Erfolgreich verbundene Subscriber_max": 10,
-            "Erfolgreich verbundene Subscriber_min": 9
-        },
-        "routing.ACO.ANT_ROUND_TIME = 3.5": {
-            "Erfolgreich verbundene Subscriber_avg": 10.0,
-            "Erfolgreich verbundene Subscriber_max": 10,
-            "Erfolgreich verbundene Subscriber_min": 10
-        },
-        "routing.ACO.ANT_ROUND_TIME = 4": {
-            "Erfolgreich verbundene Subscriber_avg": 9.866666666666667,
-            "Erfolgreich verbundene Subscriber_max": 10,
-            "Erfolgreich verbundene Subscriber_min": 8
         }
     },
     "flooding_master_count": {
@@ -244,6 +244,142 @@
             "Overlay Aufbau in Sekunden_avg": 13.097539999999999,
             "Overlay Aufbau in Sekunden_max": 14.653866666666667,
             "Overlay Aufbau in Sekunden_min": 11.397733333333331
+        }
+    },
+    "flooding_overlay_construction_packetloss": {
+        "captions": {
+            "overlay_construction_time": "Overlay Aufbau in Sekunden",
+            "successful_overlay_constructions": "Erfolgreich verbundene Subscriber"
+        },
+        "results": {
+            "networking.Connection.PACKET_LOSS = 0": {
+                "overlay_construction_time_avg": 15.098899999999999,
+                "overlay_construction_time_max": 16.378733333333333,
+                "overlay_construction_time_min": 13.087666666666667,
+                "successful_overlay_constructions_avg": 10.0,
+                "successful_overlay_constructions_max": 10,
+                "successful_overlay_constructions_min": 10
+            },
+            "networking.Connection.PACKET_LOSS = 0.05": {
+                "overlay_construction_time_avg": 14.71273333333333,
+                "overlay_construction_time_max": 17.41866666666667,
+                "overlay_construction_time_min": 12.894933333333332,
+                "successful_overlay_constructions_avg": 10.0,
+                "successful_overlay_constructions_max": 10,
+                "successful_overlay_constructions_min": 10
+            },
+            "networking.Connection.PACKET_LOSS = 0.1": {
+                "overlay_construction_time_avg": 16.837953333333335,
+                "overlay_construction_time_max": 24.3816,
+                "overlay_construction_time_min": 13.395066666666667,
+                "successful_overlay_constructions_avg": 10.0,
+                "successful_overlay_constructions_max": 10,
+                "successful_overlay_constructions_min": 10
+            },
+            "networking.Connection.PACKET_LOSS = 0.15": {
+                "overlay_construction_time_avg": 19.69247272727273,
+                "overlay_construction_time_max": 31.220818181818185,
+                "overlay_construction_time_min": 15.265363636363634,
+                "successful_overlay_constructions_avg": 9.666666666666666,
+                "successful_overlay_constructions_max": 10,
+                "successful_overlay_constructions_min": 8
+            },
+            "networking.Connection.PACKET_LOSS = 0.2": {
+                "overlay_construction_time_avg": 27.22934,
+                "overlay_construction_time_max": 42.2118,
+                "overlay_construction_time_min": 15.1448,
+                "successful_overlay_constructions_avg": 7.2,
+                "successful_overlay_constructions_max": 10,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.25": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 4.8,
+                "successful_overlay_constructions_max": 8,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.3": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 2.6,
+                "successful_overlay_constructions_max": 6,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.35": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 2.466666666666667,
+                "successful_overlay_constructions_max": 6,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.4": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.4666666666666667,
+                "successful_overlay_constructions_max": 2,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.45": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.3333333333333333,
+                "successful_overlay_constructions_max": 1,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.5": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.06666666666666667,
+                "successful_overlay_constructions_max": 1,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.55": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.0,
+                "successful_overlay_constructions_max": 0,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.6": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.0,
+                "successful_overlay_constructions_max": 0,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.65": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.0,
+                "successful_overlay_constructions_max": 0,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.7": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.0,
+                "successful_overlay_constructions_max": 0,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.75": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.0,
+                "successful_overlay_constructions_max": 0,
+                "successful_overlay_constructions_min": 0
+            }
         }
     },
     "flooding_overlay_construction_time_packetloss": {
@@ -384,6 +520,118 @@
         "routing.Flooding.SUBSCRIBE_DELAY = 4.0": {
             "Forwarder": 0.0,
             "Subscriber": 0.0
+        }
+    },
+    "simple_overlay_construction": {
+        "captions": {
+            "overlay_construction_time": "Overlay Aufbau in Sekunden",
+            "successful_overlay_constructions": "Erfolgreich verbundene Subscriber"
+        },
+        "results": {
+            "result": {
+                "overlay_construction_time_avg": 145.53884666666667,
+                "overlay_construction_time_max": 168.1744,
+                "overlay_construction_time_min": 116.24446666666668,
+                "successful_overlay_constructions_avg": 10.0,
+                "successful_overlay_constructions_max": 10,
+                "successful_overlay_constructions_min": 10
+            }
+        }
+    },
+    "simple_overlay_construction_packetloss": {
+        "captions": {
+            "overlay_construction_time": "Overlay Aufbau in Sekunden",
+            "successful_overlay_constructions": "Erfolgreich verbundene Subscriber"
+        },
+        "results": {
+            "networking.Connection.PACKET_LOSS = 0": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.0,
+                "successful_overlay_constructions_max": 0,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.05": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.0,
+                "successful_overlay_constructions_max": 0,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.1": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.06666666666666667,
+                "successful_overlay_constructions_max": 1,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.15": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.0,
+                "successful_overlay_constructions_max": 0,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.2": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.0,
+                "successful_overlay_constructions_max": 0,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.25": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.3333333333333333,
+                "successful_overlay_constructions_max": 5,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.3": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.3333333333333333,
+                "successful_overlay_constructions_max": 2,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.35": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.13333333333333333,
+                "successful_overlay_constructions_max": 2,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.4": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.06666666666666667,
+                "successful_overlay_constructions_max": 1,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.45": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.06666666666666667,
+                "successful_overlay_constructions_max": 1,
+                "successful_overlay_constructions_min": 0
+            },
+            "networking.Connection.PACKET_LOSS = 0.5": {
+                "overlay_construction_time_avg": NaN,
+                "overlay_construction_time_max": NaN,
+                "overlay_construction_time_min": NaN,
+                "successful_overlay_constructions_avg": 0.06666666666666667,
+                "successful_overlay_constructions_max": 1,
+                "successful_overlay_constructions_min": 0
+            }
         }
     }
 }

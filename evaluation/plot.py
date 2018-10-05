@@ -8,7 +8,8 @@ import argparse
 
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Evaluation plotter.")
-parser.add_argument("-r", "--results", metavar='RESULTS_FILE', help="Results file to load", default="results.json")
+parser.add_argument("-R", "--results", metavar='RESULTS_FILE', help="Results file to load", default="results.json")
+parser.add_argument("-r", "--run", metavar='TASK', help="List of task results to plot", nargs="+", default="")
 parser.add_argument("-f", "--format", metavar="FORMAT", help="Plot data in this format. All mathplotlib formats are supported, default: 'png'", default=[], action="append")
 parser.add_argument("-l", "--log", metavar='LOGLEVEL', help="Loglevel to log", default="INFO")
 args = parser.parse_args()
@@ -34,7 +35,16 @@ with open(args.results, "r") as f:
 	data = json.load(f)
 
 logger.info("Plotting '%s'..." % args.results)
-for task_name, task_data in data.items():
+to_run = list(data.keys())
+if args.run and len(args.run):
+    to_run = args.run
+else:
+    to_run = list(data.keys())
+for task_name in data.keys():
+    if task_name not in to_run:
+        logger.info("Ignoring task '%s' (requested on commandline)..." % task_name)
+for task_name in to_run:
+    task_data = data[task_name]
     logger.info("Plotting task: '%s'" % task_name)
     
     # old style results without captions
@@ -73,6 +83,7 @@ for task_name, task_data in data.items():
     # plot graph
     plt.figure()
     if ptype == "normal":       # normal line based
+        plt.figure()
         plot_args = []
         legends = []
         for name in sorted(subfigures):
@@ -89,6 +100,7 @@ for task_name, task_data in data.items():
         plt.xlabel(heading)
         write_plot(plt, args.format, task_name)
     if ptype == "errorbars_stapled":    # errorbars stapled
+        plt.figure()
         legends = []
         bottoms = [0] * len(x)
         for name in sorted(subfigures):
@@ -108,6 +120,7 @@ for task_name, task_data in data.items():
         write_plot(plt, args.format, task_name)
     if ptype == "errorbars":    # single errorbars
         for name in sorted(subfigures):
+            plt.figure()
             min_values = y["%s_%s" % (name, 'min')]
             max_values = y["%s_%s" % (name, 'max')]
             avg_values = y["%s_%s" % (name, 'avg')]
