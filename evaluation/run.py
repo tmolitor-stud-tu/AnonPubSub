@@ -219,6 +219,9 @@ def evaluate(task, settings, task_imports, args):
                 send_command(G.node[n]["ip"], role_to_command[roletype], {"channel": channel})
 
     logger.info("******** Waiting at most %.3f seconds for routers doing their work..." % task["runtime"])
+    #TODO: implement reading of sse streams (read log entries and write them to files like the helpers.sh script does)
+    #TODO: additionally implement a way for the filter scripts to signal that a node completed its measurement allowing for
+    #TODO: an early evaluation stop instead of waiting the full task["runtime"] every time
     #timeout = time.time() + task["runtime"]
     #while time.time() < timeout:
         #(ready_to_read, _, exceptions_list) = select.select(list(sse_streams.keys()), [], list(sse_streams.keys()), 1.0)

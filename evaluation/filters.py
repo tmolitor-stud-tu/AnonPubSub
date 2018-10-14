@@ -107,6 +107,7 @@ class Filters(Base):
                 if self.data_received[msg["data"]] == task["publishers"] and not self.overlay_constructed:
                     self.logger.error("*********** CODE_EVENT(overlay_constructed): overlay_construction.append(%.3f)" % (self.time.time() - self.started))
                     self.logger.info("*********** DEBUG_DATA: node_id = %s" % self.router.node_id)
+                    #TODO: this should be used by the evaluator to stop evaluation earlier if possible
                     self.logger.info("*********** MEASUREMENT_COMPLETED: %s" % self.router.node_id)
                     self.overlay_constructed = True
     
